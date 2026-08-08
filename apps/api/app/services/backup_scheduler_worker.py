@@ -3,6 +3,7 @@ import time
 from datetime import datetime, timezone
 
 from app.db.session import SessionLocal
+from app.services.backup_alert_monitor import sync_scheduled_workspace_alerts
 from app.services.backup_execution import (
     create_backup_job,
     execute_backup_job,
@@ -81,6 +82,8 @@ def run_once() -> int:
                 )
 
             processed += 1
+
+        sync_scheduled_workspace_alerts(db)
 
     return processed
 
