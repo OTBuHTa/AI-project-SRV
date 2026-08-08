@@ -13,6 +13,9 @@ from app.db.session import get_db
 from app.models.core import BackupArtifact, BackupJob, BackupSchedule
 from app.schemas.backups import BackupCreate, BackupJobOut
 from app.schemas.backup_schedule import BackupScheduleOut, BackupScheduleUpdate
+from app.schemas.backup_status import BackupStatusOut
+from app.schemas.backup_protection import BackupProtectionOut
+from app.schemas.backup_alerts import BackupAlertsOut
 from app.schemas.backup_health import BackupCleanupOut, BackupCleanupRequest, BackupHealthOut, BackupStorageHealthOut
 from app.services.backup import BackupError
 from app.services.backup_execution import (
@@ -25,6 +28,9 @@ from app.services.backup_health import evaluate_backup_health
 from app.services.backup_retention import RetentionPolicy
 from app.services.backup_scheduler import calculate_next_run
 from app.services.backup_storage import probe_backup_storage
+from app.services.backup_status import evaluate_backup_status
+from app.services.backup_protection import build_backup_protection_summary
+from app.services.backup_alerts import evaluate_backup_alerts
 from app.services.backup_verification import (
     BackupVerificationError,
     verify_postgres_archive,
@@ -188,3 +194,125 @@ def update_backup_schedule(
     db.refresh(schedule)
 
     return schedule
+
+
+@router.get("/status", response_model=BackupStatusOut)
+def backup_status(
+    context=Depends(require_permission("workspace.read")),
+    db: Session = Depends(get_db),
+):
+    workspace, _membership = context
+    workspace_id = str(workspace.id)
+
+    artifacts = db.scalars(
+        select(BackupArtifact)
+        .join(
+            BackupJob,
+            BackupArtifact.backup_job_id == BackupJob.id,
+        )
+        .where(BackupJob.workspace_id == workspace_id)
+        .order_by(BackupArtifact.created_at.desc())
+    ).all()
+
+    jobs = db.scalars(
+        select(BackupJob)
+        .where(BackupJob.workspace_id == workspace_id)
+        .order_by(BackupJob.created_at.desc())
+        .limit(100)
+    ).all()
+
+    schedule = db.scalar(
+        select(BackupSchedule).where(
+            BackupSchedule.workspace_id == workspace_id
+        )
+    )
+
+    return evaluate_backup_status(
+        artifacts=artifacts,
+        jobs=jobs,
+        schedule=schedule,
+    )
+
+
+@router.get("/alerts", response_model=BackupAlertsOut)
+def backup_alerts(
+    context=Depends(require_permission("workspace.read")),
+    db: Session = Depends(get_db),
+):
+    workspace, _membership = context
+    workspace_id = str(workspace.id)
+
+    artifacts = db.scalars(
+        select(BackupArtifact)
+        .join(
+            BackupJob,
+            BackupArtifact.backup_job_id == BackupJob.id,
+        )
+        .where(BackupJob.workspace_id == workspace_id)
+        .order_by(BackupArtifact.created_at.desc())
+    ).all()
+
+    jobs = db.scalars(
+        select(BackupJob)
+        .where(BackupJob.workspace_id == workspace_id)
+        .order_by(BackupJob.created_at.desc())
+        .limit(100)
+    ).all()
+
+    schedule = db.scalar(
+        select(BackupSchedule).where(
+            BackupSchedule.workspace_id == workspace_id
+        )
+    )
+
+    status = evaluate_backup_status(
+        artifacts=artifacts,
+        jobs=jobs,
+        schedule=schedule,
+    )
+
+    return {
+        "status": status.status,
+        "generated_at": datetime.now(timezone.utc),
+        "alerts": evaluate_backup_alerts(status),
+    }
+
+
+@router.get("/protection", response_model=BackupProtectionOut)
+def backup_protection(
+    context=Depends(require_permission("workspace.read")),
+    db: Session = Depends(get_db),
+):
+    workspace, _membership = context
+    workspace_id = str(workspace.id)
+
+    artifacts = db.scalars(
+        select(BackupArtifact)
+        .join(
+            BackupJob,
+            BackupArtifact.backup_job_id == BackupJob.id,
+        )
+        .where(BackupJob.workspace_id == workspace_id)
+        .order_by(BackupArtifact.created_at.desc())
+    ).all()
+
+    jobs = db.scalars(
+        select(BackupJob)
+        .where(BackupJob.workspace_id == workspace_id)
+        .order_by(BackupJob.created_at.desc())
+        .limit(100)
+    ).all()
+
+    schedule = db.scalar(
+        select(BackupSchedule).where(
+            BackupSchedule.workspace_id == workspace_id
+        )
+    )
+
+    status = evaluate_backup_status(
+        artifacts=artifacts,
+        jobs=jobs,
+        schedule=schedule,
+    )
+
+    return build_backup_protection_summary(status)
