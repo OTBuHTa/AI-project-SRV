@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.models.core import (
@@ -11,11 +11,33 @@ from app.services.backup_alerts import evaluate_backup_alerts
 from app.services.backup_status import evaluate_backup_status
 
 
+def _lock_workspace_backup_alerts(
+    db: Session,
+    *,
+    workspace_id: str,
+) -> None:
+    db.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended(:workspace_id, 0)"
+            ")"
+        ),
+        {"workspace_id": workspace_id},
+    )
+
+
 def sync_workspace_backup_alerts(
     db: Session,
     *,
     workspace_id: str,
 ) -> int:
+    # Serialize the complete snapshot -> evaluate -> persist cycle
+    # for a workspace. The transaction-scoped lock is released on commit.
+    _lock_workspace_backup_alerts(
+        db,
+        workspace_id=workspace_id,
+    )
+
     artifacts = db.scalars(
         select(BackupArtifact)
         .join(
