@@ -10,12 +10,13 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_permission
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.models.core import BackupArtifact, BackupJob, BackupSchedule
+from app.models.core import BackupArtifact, BackupJob, BackupSchedule, BackupAlertEvent
 from app.schemas.backups import BackupCreate, BackupJobOut
 from app.schemas.backup_schedule import BackupScheduleOut, BackupScheduleUpdate
 from app.schemas.backup_status import BackupStatusOut
 from app.schemas.backup_protection import BackupProtectionOut
 from app.schemas.backup_alerts import BackupAlertsOut
+from app.schemas.backup_alert_events import BackupAlertEventOut
 from app.schemas.backup_health import BackupCleanupOut, BackupCleanupRequest, BackupHealthOut, BackupStorageHealthOut
 from app.services.backup import BackupError
 from app.services.backup_execution import (
@@ -31,6 +32,7 @@ from app.services.backup_storage import probe_backup_storage
 from app.services.backup_status import evaluate_backup_status
 from app.services.backup_protection import build_backup_protection_summary
 from app.services.backup_alerts import evaluate_backup_alerts
+from app.services.backup_alert_events import acknowledge_backup_alert
 from app.services.backup_verification import (
     BackupVerificationError,
     verify_postgres_archive,
@@ -316,3 +318,70 @@ def backup_protection(
     )
 
     return build_backup_protection_summary(status)
+
+
+@router.get(
+    "/alert-events",
+    response_model=list[BackupAlertEventOut],
+)
+def list_backup_alert_events(
+    context=Depends(require_permission("workspace.read")),
+    db: Session = Depends(get_db),
+):
+    workspace, _membership = context
+
+    return db.scalars(
+        select(BackupAlertEvent)
+        .where(
+            BackupAlertEvent.workspace_id == str(workspace.id)
+        )
+        .order_by(BackupAlertEvent.last_seen_at.desc())
+        .limit(200)
+    ).all()
+
+
+@router.get(
+    "/alert-events/active",
+    response_model=list[BackupAlertEventOut],
+)
+def list_active_backup_alert_events(
+    context=Depends(require_permission("workspace.read")),
+    db: Session = Depends(get_db),
+):
+    workspace, _membership = context
+
+    return db.scalars(
+        select(BackupAlertEvent)
+        .where(
+            BackupAlertEvent.workspace_id == str(workspace.id),
+            BackupAlertEvent.active.is_(True),
+        )
+        .order_by(BackupAlertEvent.last_seen_at.desc())
+    ).all()
+
+
+@router.post(
+    "/alert-events/{event_id}/acknowledge",
+    response_model=BackupAlertEventOut,
+)
+def acknowledge_backup_alert_event(
+    event_id: str,
+    context=Depends(require_permission("workspace.manage")),
+    db: Session = Depends(get_db),
+):
+    workspace, membership = context
+
+    event = acknowledge_backup_alert(
+        db,
+        workspace_id=str(workspace.id),
+        event_id=event_id,
+        acknowledged_by=str(membership.user_id),
+    )
+
+    if event is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Backup alert event not found",
+        )
+
+    return event
