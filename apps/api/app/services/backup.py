@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import uuid
 
-from app.services.backup_storage import LocalStorageAdapter, sha256_file
+from app.services.backup_storage import get_backup_storage, sha256_file
 
 
 @dataclass
@@ -38,7 +38,7 @@ class BackupService:
             "postgresql://",
             1,
         )
-        self.storage = LocalStorageAdapter(storage_root)
+        self.storage = get_backup_storage()
         self.work_root = Path(work_root or "/tmp/ai-project-srv-backups")
         self.work_root.mkdir(parents=True, exist_ok=True)
 

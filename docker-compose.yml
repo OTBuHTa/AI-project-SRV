@@ -39,6 +39,7 @@ services:
     volumes:
       - ./apps/api/app:/app/app
       - backup_data:/var/lib/ai-project-srv/backups
+      - ${BACKUP_NAS_HOST_PATH:-/tmp/ai-project-srv-nas}:/mnt/ai-project-srv-backups
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
