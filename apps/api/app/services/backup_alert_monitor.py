@@ -2,11 +2,13 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.models.core import (
+    BackupAlertEvent,
     BackupArtifact,
     BackupJob,
     BackupSchedule,
 )
 from app.services.backup_alert_events import sync_backup_alert_events
+from app.services.backup_alert_delivery_queue import enqueue_alert_delivery
 from app.services.backup_alerts import evaluate_backup_alerts
 from app.services.backup_status import evaluate_backup_status
 
@@ -36,6 +38,15 @@ def sync_workspace_backup_alerts(
     _lock_workspace_backup_alerts(
         db,
         workspace_id=workspace_id,
+    )
+
+    existing_active_codes = set(
+        db.scalars(
+            select(BackupAlertEvent.code).where(
+                BackupAlertEvent.workspace_id == workspace_id,
+                BackupAlertEvent.active.is_(True),
+            )
+        ).all()
     )
 
     artifacts = db.scalars(
@@ -74,6 +85,15 @@ def sync_workspace_backup_alerts(
         workspace_id=workspace_id,
         alerts=alerts,
     )
+
+    for event in events:
+        if event.code not in existing_active_codes:
+            enqueue_alert_delivery(
+                db,
+                workspace_id=workspace_id,
+                alert_event_id=event.id,
+                channel="webhook",
+            )
 
     return len(events)
 
