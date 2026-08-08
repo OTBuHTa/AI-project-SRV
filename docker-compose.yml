@@ -64,6 +64,22 @@ services:
       - backup_data:/var/lib/ai-project-srv/backups
       - ${BACKUP_NAS_HOST_PATH:-/tmp/ai-project-srv-nas}:/mnt/ai-project-srv-backups
 
+  backup-alert-delivery:
+    build:
+      context: ./apps/api
+    command:
+      - python
+      - -m
+      - app.services.backup_alert_delivery_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   backup-verifier:
     image: postgres:16-alpine
     profiles: ["tools"]

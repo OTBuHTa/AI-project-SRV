@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     llm_model: str = "qwen2.5:7b"
     llm_api_key: str = ""
     llm_timeout_seconds: float = 90.0
+    backup_alert_webhook_url: str = ""
+    backup_alert_webhook_timeout_seconds: float = 10.0
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
