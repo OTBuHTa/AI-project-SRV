@@ -1,0 +1,20 @@
+.PHONY: up down logs migrate test lint check
+up:
+	docker compose up --build -d
+
+down:
+	docker compose down
+
+logs:
+	docker compose logs -f api
+
+migrate:
+	docker compose exec api alembic upgrade head
+
+test:
+	cd apps/api && pytest -q
+
+lint:
+	cd apps/api && ruff check app tests
+
+check: lint test
