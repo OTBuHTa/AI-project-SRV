@@ -1,0 +1,11 @@
+[project]
+name = "ai-project-srv-linux-agent"
+version = "0.1.2a0"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.28,<1",
+  "psutil>=6,<8",
+]
+
+[project.scripts]
+ai-srv-agent = "ai_srv_agent.main:main"
