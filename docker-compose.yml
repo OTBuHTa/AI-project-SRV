@@ -44,6 +44,26 @@ services:
       - "host.docker.internal:host-gateway"
 
 
+
+  backup-scheduler:
+    build:
+      context: ./apps/api
+    command:
+      - python
+      - -m
+      - app.services.backup_scheduler_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - backup_data:/var/lib/ai-project-srv/backups
+      - ${BACKUP_NAS_HOST_PATH:-/tmp/ai-project-srv-nas}:/mnt/ai-project-srv-backups
+
   backup-verifier:
     image: postgres:16-alpine
     profiles: ["tools"]
