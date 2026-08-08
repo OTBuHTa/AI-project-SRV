@@ -9,11 +9,19 @@ from app.services.backup_alert_events import (
 from app.services.backup_alerts import BackupAlert
 
 
-def test_sync_creates_active_alert():
+def test_sync_creates_active_alert_with_upsert():
     now = datetime(2026, 8, 9, tzinfo=timezone.utc)
 
+    active = SimpleNamespace(
+        code="backup_missing",
+        active=True,
+        first_seen_at=now,
+        last_seen_at=now,
+        resolved_at=None,
+    )
+
     db = MagicMock()
-    db.scalars.return_value.all.return_value = []
+    db.scalars.return_value.all.return_value = [active]
 
     events = sync_backup_alert_events(
         db,
@@ -28,24 +36,18 @@ def test_sync_creates_active_alert():
         now=now,
     )
 
-    assert len(events) == 1
-    assert events[0].workspace_id == "workspace-1"
-    assert events[0].code == "backup_missing"
-    assert events[0].active is True
-    assert events[0].first_seen_at == now
-    assert events[0].last_seen_at == now
+    assert events == [active]
 
-    db.add.assert_called_once()
+    db.execute.assert_called_once()
+    db.add.assert_not_called()
     db.commit.assert_called_once()
 
 
-def test_sync_updates_existing_active_alert():
+def test_sync_existing_alert_uses_upsert():
     now = datetime(2026, 8, 9, tzinfo=timezone.utc)
 
-    existing = SimpleNamespace(
+    active = SimpleNamespace(
         code="backup_missing",
-        severity="warning",
-        message="old",
         active=True,
         first_seen_at=now,
         last_seen_at=now,
@@ -53,26 +55,24 @@ def test_sync_updates_existing_active_alert():
     )
 
     db = MagicMock()
-    db.scalars.return_value.all.return_value = [existing]
+    db.scalars.return_value.all.return_value = [active]
 
     events = sync_backup_alert_events(
         db,
         workspace_id="workspace-1",
         alerts=[
             BackupAlert(
-                severity="critical",
+                severity="warning",
                 code="backup_missing",
-                message="updated",
+                message="Updated message",
             )
         ],
         now=now,
     )
 
-    assert events == [existing]
-    assert existing.severity == "critical"
-    assert existing.message == "updated"
-    assert existing.last_seen_at == now
+    assert events == [active]
 
+    db.execute.assert_called_once()
     db.add.assert_not_called()
     db.commit.assert_called_once()
 
@@ -101,6 +101,52 @@ def test_sync_resolves_disappeared_alert():
     assert existing.active is False
     assert existing.resolved_at == now
     assert existing.last_seen_at == now
+
+    db.execute.assert_not_called()
+    db.commit.assert_called_once()
+
+
+def test_sync_multiple_alerts_uses_one_upsert_each():
+    now = datetime(2026, 8, 9, tzinfo=timezone.utc)
+
+    active_1 = SimpleNamespace(
+        code="backup_missing",
+        active=True,
+        resolved_at=None,
+    )
+    active_2 = SimpleNamespace(
+        code="scheduler_lag",
+        active=True,
+        resolved_at=None,
+    )
+
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [
+        active_1,
+        active_2,
+    ]
+
+    events = sync_backup_alert_events(
+        db,
+        workspace_id="workspace-1",
+        alerts=[
+            BackupAlert(
+                severity="critical",
+                code="backup_missing",
+                message="Backup missing",
+            ),
+            BackupAlert(
+                severity="warning",
+                code="scheduler_lag",
+                message="Scheduler lag",
+            ),
+        ],
+        now=now,
+    )
+
+    assert events == [active_1, active_2]
+    assert db.execute.call_count == 2
+    db.commit.assert_called_once()
 
 
 def test_acknowledge_backup_alert():

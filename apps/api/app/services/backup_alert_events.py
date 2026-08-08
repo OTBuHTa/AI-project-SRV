@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
-from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.models.core import BackupAlertEvent
@@ -17,6 +17,34 @@ def sync_backup_alert_events(
 ) -> list[BackupAlertEvent]:
     now = now or datetime.now(timezone.utc)
 
+    current_codes = {alert.code for alert in alerts}
+
+    for alert in alerts:
+        statement = insert(BackupAlertEvent).values(
+            workspace_id=workspace_id,
+            code=alert.code,
+            severity=alert.severity,
+            message=alert.message,
+            active=True,
+            first_seen_at=now,
+            last_seen_at=now,
+        )
+
+        statement = statement.on_conflict_do_update(
+            index_elements=[
+                BackupAlertEvent.workspace_id,
+                BackupAlertEvent.code,
+            ],
+            index_where=BackupAlertEvent.active.is_(True),
+            set_={
+                "severity": statement.excluded.severity,
+                "message": statement.excluded.message,
+                "last_seen_at": statement.excluded.last_seen_at,
+            },
+        )
+
+        db.execute(statement)
+
     existing = list(
         db.scalars(
             select(BackupAlertEvent).where(
@@ -26,32 +54,6 @@ def sync_backup_alert_events(
         ).all()
     )
 
-    active_by_code = {event.code: event for event in existing}
-    current_codes = {alert.code for alert in alerts}
-    current_events: list[BackupAlertEvent] = []
-
-    for alert in alerts:
-        event = active_by_code.get(alert.code)
-
-        if event is None:
-            event = BackupAlertEvent(
-                id=str(uuid4()),
-                workspace_id=workspace_id,
-                code=alert.code,
-                severity=alert.severity,
-                message=alert.message,
-                active=True,
-                first_seen_at=now,
-                last_seen_at=now,
-            )
-            db.add(event)
-        else:
-            event.severity = alert.severity
-            event.message = alert.message
-            event.last_seen_at = now
-
-        current_events.append(event)
-
     for event in existing:
         if event.code not in current_codes:
             event.active = False
@@ -59,7 +61,12 @@ def sync_backup_alert_events(
             event.last_seen_at = now
 
     db.commit()
-    return current_events
+
+    return [
+        event
+        for event in existing
+        if event.code in current_codes
+    ]
 
 
 def acknowledge_backup_alert(
