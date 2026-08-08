@@ -38,9 +38,31 @@ services:
         condition: service_healthy
     volumes:
       - ./apps/api/app:/app/app
+      - backup_data:/var/lib/ai-project-srv/backups
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+
+  backup-verifier:
+    image: postgres:16-alpine
+    profiles: ["tools"]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: aisrv
+      PGPASSWORD: aisrv
+      PGDATABASE: postgres
+      EXPECTED_REVISION: 0007_backup_pipeline
+      MIN_TABLE_COUNT: "17"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - backup_data:/backups
+      - ./infrastructure/backup/verify_restore.sh:/usr/local/bin/verify_restore:ro
+    entrypoint: ["/usr/local/bin/verify_restore"]
 
 volumes:
   postgres_data:
   redis_data:
+  backup_data:

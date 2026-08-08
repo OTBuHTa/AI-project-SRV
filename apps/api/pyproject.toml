@@ -1,26 +1,26 @@
 [project]
 name = "ai-project-srv-api"
-version = "0.1.5a0"
+version = "0.1.6a0"
 requires-python = ">=3.12"
 dependencies = [
-  "fastapi>=0.116,<1",
-  "uvicorn[standard]>=0.35,<1",
-  "pydantic-settings>=2.10,<3",
-  "pydantic[email]>=2.10,<3",
-  "sqlalchemy>=2.0,<3",
-  "alembic>=1.16,<2",
-  "psycopg[binary]>=3.2,<4",
-  "redis>=6,<7",
-  "PyJWT>=2.10,<3",
-  "pwdlib[argon2]>=0.2,<1",
-  "httpx>=0.28,<1",
+    "fastapi>=0.116,<1",
+    "uvicorn[standard]>=0.35,<1",
+    "pydantic-settings>=2.10,<3",
+    "pydantic[email]>=2.10,<3",
+    "sqlalchemy>=2.0,<3",
+    "alembic>=1.16,<2",
+    "psycopg[binary]>=3.2,<4",
+    "redis>=6,<7",
+    "PyJWT>=2.10,<3",
+    "pwdlib[argon2]>=0.2,<1",
+    "httpx>=0.28,<1",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=8,<9",
-  "httpx>=0.28,<1",
-  "ruff>=0.12,<1",
+    "pytest>=8,<9",
+    "httpx>=0.28,<1",
+    "ruff>=0.12,<1",
 ]
 
 [tool.pytest.ini_options]
@@ -28,3 +28,8 @@ pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["alembic*", "tests*"]
