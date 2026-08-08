@@ -12,7 +12,12 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.core import BackupArtifact, BackupJob
 from app.schemas.backups import BackupCreate, BackupJobOut
+from app.schemas.backup_health import BackupCleanupOut, BackupCleanupRequest, BackupHealthOut, BackupStorageHealthOut
 from app.services.backup import BackupError, BackupService
+from app.services.backup_cleanup import cleanup_expired_backups
+from app.services.backup_health import evaluate_backup_health
+from app.services.backup_retention import RetentionPolicy
+from app.services.backup_storage import probe_backup_storage
 from app.services.backup_verification import (
     BackupVerificationError,
     verify_postgres_archive,
@@ -119,3 +124,58 @@ def create_backup(
             status_code=500,
             detail=f"Backup failed: {exc}",
         ) from exc
+
+
+@router.get("/health", response_model=BackupHealthOut)
+def backup_health(
+    context=Depends(require_permission("workspace.read")),
+    db: Session = Depends(get_db),
+):
+    workspace, _membership = context
+
+    artifacts = db.scalars(
+        select(BackupArtifact)
+        .join(
+            BackupJob,
+            BackupArtifact.backup_job_id == BackupJob.id,
+        )
+        .where(BackupJob.workspace_id == str(workspace.id))
+        .order_by(BackupArtifact.created_at.desc())
+    ).all()
+
+    return evaluate_backup_health(artifacts)
+
+
+@router.post("/cleanup", response_model=BackupCleanupOut)
+def cleanup_backups(
+    payload: BackupCleanupRequest,
+    context=Depends(require_permission("workspace.manage")),
+    db: Session = Depends(get_db),
+):
+    workspace, _membership = context
+
+    artifacts = db.scalars(
+        select(BackupArtifact)
+        .join(
+            BackupJob,
+            BackupArtifact.backup_job_id == BackupJob.id,
+        )
+        .where(BackupJob.workspace_id == str(workspace.id))
+        .order_by(BackupArtifact.created_at.desc())
+    ).all()
+
+    return cleanup_expired_backups(
+        db,
+        artifacts,
+        RetentionPolicy(
+            keep_last=payload.keep_last,
+            max_age_days=payload.max_age_days,
+        ),
+    )
+
+
+@router.get("/storage-health", response_model=BackupStorageHealthOut)
+def backup_storage_health(
+    _context=Depends(require_permission("workspace.read")),
+):
+    return probe_backup_storage()
