@@ -38,6 +38,15 @@ def decode_token(token: str) -> dict:
     return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
 
 
+def decode_access_token(token: str) -> dict:
+    payload = decode_token(token)
+
+    if payload.get("typ") != "access":
+        raise jwt.InvalidTokenError("expected access token")
+
+    return payload
+
+
 def new_refresh_token() -> tuple[str, str]:
     raw = secrets.token_urlsafe(48)
     return raw, hashlib.sha256(raw.encode()).hexdigest()
