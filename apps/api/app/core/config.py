@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     backup_alert_webhook_url: str = ""
     backup_alert_webhook_timeout_seconds: float = 10.0
     notification_webhook_allow_private_networks: bool = False
+    notification_webhook_signing_secret: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

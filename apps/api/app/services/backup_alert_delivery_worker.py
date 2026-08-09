@@ -98,6 +98,9 @@ def run_once() -> int:
                     timeout_seconds=(
                         settings.backup_alert_webhook_timeout_seconds
                     ),
+                    signing_secret=(
+                        settings.notification_webhook_signing_secret
+                    ),
                     payload=DeliveryPayload(
                         delivery_id=delivery.id,
                         workspace_id=delivery.workspace_id,

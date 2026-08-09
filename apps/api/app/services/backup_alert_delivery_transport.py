@@ -1,4 +1,8 @@
-from dataclasses import dataclass
+import hashlib
+import hmac
+import json
+import time
+from dataclasses import asdict, dataclass
 
 import httpx
 
@@ -17,23 +21,57 @@ class DeliveryTransportError(RuntimeError):
     pass
 
 
+def build_webhook_signature(
+    *,
+    secret: str,
+    timestamp: int,
+    body: bytes,
+) -> str:
+    signed = str(timestamp).encode() + b"." + body
+
+    return hmac.new(
+        secret.encode(),
+        signed,
+        hashlib.sha256,
+    ).hexdigest()
+
+
 def deliver_webhook(
     *,
     url: str,
     payload: DeliveryPayload,
     timeout_seconds: float = 10.0,
+    signing_secret: str = "",
 ) -> None:
+    body = json.dumps(
+        asdict(payload),
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+
+    headers = {
+        "Content-Type": "application/json",
+    }
+
+    if signing_secret:
+        timestamp = int(time.time())
+
+        signature = build_webhook_signature(
+            secret=signing_secret,
+            timestamp=timestamp,
+            body=body,
+        )
+
+        headers["X-AI-SRV-Timestamp"] = str(timestamp)
+        headers["X-AI-SRV-Signature"] = (
+            f"sha256={signature}"
+        )
+
     try:
         response = httpx.post(
             url,
-            json={
-                "delivery_id": payload.delivery_id,
-                "workspace_id": payload.workspace_id,
-                "alert_event_id": payload.alert_event_id,
-                "code": payload.code,
-                "severity": payload.severity,
-                "message": payload.message,
-            },
+            content=body,
+            headers=headers,
             timeout=timeout_seconds,
         )
         response.raise_for_status()

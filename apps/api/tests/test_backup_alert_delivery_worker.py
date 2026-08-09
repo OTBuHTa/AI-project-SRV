@@ -15,6 +15,7 @@ def test_worker_with_empty_queue(
     get_settings.return_value = SimpleNamespace(
         backup_alert_webhook_timeout_seconds=10.0,
         notification_webhook_allow_private_networks=False,
+        notification_webhook_signing_secret="test-secret",
     )
 
     db = MagicMock()
@@ -43,6 +44,7 @@ def test_worker_delivers_to_destination(
     get_settings.return_value = SimpleNamespace(
         backup_alert_webhook_timeout_seconds=5.0,
         notification_webhook_allow_private_networks=False,
+        notification_webhook_signing_secret="test-secret",
     )
 
     delivery = SimpleNamespace(
@@ -84,6 +86,7 @@ def test_worker_delivers_to_destination(
 
     assert kwargs["url"] == destination.endpoint
     assert kwargs["timeout_seconds"] == 5.0
+    assert kwargs["signing_secret"] == "test-secret"
     assert kwargs["payload"].delivery_id == "delivery-1"
     assert kwargs["payload"].alert_event_id == "event-1"
 
@@ -110,6 +113,7 @@ def test_worker_marks_transport_failure(
     get_settings.return_value = SimpleNamespace(
         backup_alert_webhook_timeout_seconds=5.0,
         notification_webhook_allow_private_networks=False,
+        notification_webhook_signing_secret="test-secret",
     )
 
     delivery = SimpleNamespace(
@@ -170,6 +174,7 @@ def test_worker_fails_missing_destination(
     get_settings.return_value = SimpleNamespace(
         backup_alert_webhook_timeout_seconds=5.0,
         notification_webhook_allow_private_networks=False,
+        notification_webhook_signing_secret="test-secret",
     )
 
     delivery = SimpleNamespace(
@@ -326,6 +331,7 @@ def test_worker_blocks_unsafe_destination_endpoint(
     get_settings.return_value = SimpleNamespace(
         backup_alert_webhook_timeout_seconds=5.0,
         notification_webhook_allow_private_networks=False,
+        notification_webhook_signing_secret="test-secret",
     )
 
     delivery = SimpleNamespace(
