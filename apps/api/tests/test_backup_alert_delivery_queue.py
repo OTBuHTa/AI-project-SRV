@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from app.services.backup_alert_delivery_queue import (
+    CANCELED,
     DELIVERED,
     FAILED,
     PENDING,
@@ -10,6 +11,7 @@ from app.services.backup_alert_delivery_queue import (
     calculate_backoff_seconds,
     claim_due_deliveries,
     enqueue_alert_delivery,
+    mark_delivery_canceled,
     mark_delivery_delivered,
     mark_delivery_failed,
 )
@@ -177,5 +179,34 @@ def test_stale_sending_delivery_can_be_reclaimed():
     assert delivery.status == SENDING
     assert delivery.attempts == 2
     assert delivery.last_attempt_at == now
+    assert delivery.updated_at == now
+    db.commit.assert_called_once()
+
+
+def test_mark_delivery_canceled_is_terminal():
+    now = datetime(2026, 8, 9, tzinfo=timezone.utc)
+
+    delivery = SimpleNamespace(
+        status=SENDING,
+        next_attempt_at=now,
+        last_error=None,
+        updated_at=None,
+    )
+
+    db = MagicMock()
+
+    mark_delivery_canceled(
+        db,
+        delivery=delivery,
+        reason="notification destination disabled",
+        now=now,
+    )
+
+    assert delivery.status == CANCELED
+    assert delivery.next_attempt_at is None
+    assert (
+        delivery.last_error
+        == "notification destination disabled"
+    )
     assert delivery.updated_at == now
     db.commit.assert_called_once()

@@ -12,6 +12,7 @@ PENDING = "pending"
 SENDING = "sending"
 DELIVERED = "delivered"
 FAILED = "failed"
+CANCELED = "canceled"
 
 DEFAULT_MAX_ATTEMPTS = 5
 DEFAULT_BATCH_SIZE = 20
@@ -137,6 +138,23 @@ def mark_delivery_delivered(
     delivery.delivered_at = now
     delivery.next_attempt_at = None
     delivery.last_error = None
+    delivery.updated_at = now
+
+    db.commit()
+
+
+def mark_delivery_canceled(
+    db: Session,
+    *,
+    delivery: BackupAlertDelivery,
+    reason: Exception | str,
+    now: datetime | None = None,
+) -> None:
+    now = now or datetime.now(timezone.utc)
+
+    delivery.status = CANCELED
+    delivery.next_attempt_at = None
+    delivery.last_error = str(reason)
     delivery.updated_at = now
 
     db.commit()

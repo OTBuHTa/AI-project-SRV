@@ -8,12 +8,16 @@ from app.db.session import SessionLocal
 from app.models.core import BackupAlertEvent, NotificationDestination
 from app.services.backup_alert_delivery_queue import (
     claim_due_deliveries,
+    mark_delivery_canceled,
     mark_delivery_delivered,
     mark_delivery_failed,
 )
 from app.services.backup_alert_delivery_transport import (
     DeliveryPayload,
     deliver_webhook,
+)
+from app.services.notification_endpoint_policy import (
+    validate_notification_endpoint,
 )
 
 
@@ -57,15 +61,32 @@ def run_once() -> int:
                     == delivery.destination_id,
                     NotificationDestination.workspace_id
                     == delivery.workspace_id,
-                    NotificationDestination.enabled.is_(True),
                 )
             )
 
-            if destination is not None and destination.channel != "webhook":
-                mark_delivery_failed(
+            if destination is None:
+                mark_delivery_canceled(
                     db,
                     delivery=delivery,
-                    error=(
+                    reason="notification destination not found",
+                )
+                processed += 1
+                continue
+
+            if not destination.enabled:
+                mark_delivery_canceled(
+                    db,
+                    delivery=delivery,
+                    reason="notification destination disabled",
+                )
+                processed += 1
+                continue
+
+            if destination.channel != "webhook":
+                mark_delivery_canceled(
+                    db,
+                    delivery=delivery,
+                    reason=(
                         "unsupported notification channel: "
                         f"{destination.channel}"
                     ),
@@ -73,20 +94,21 @@ def run_once() -> int:
                 processed += 1
                 continue
 
-            if destination is None:
-                mark_delivery_failed(
-                    db,
-                    delivery=delivery,
-                    error="notification destination not found or disabled",
-                )
-                processed += 1
-                continue
-
             try:
+                validate_notification_endpoint(
+                    destination.endpoint,
+                    allow_private_networks=(
+                        settings.notification_webhook_allow_private_networks
+                    ),
+                )
+
                 deliver_webhook(
                     url=destination.endpoint,
                     timeout_seconds=(
                         settings.backup_alert_webhook_timeout_seconds
+                    ),
+                    signing_secret=(
+                        settings.notification_webhook_signing_secret
                     ),
                     payload=DeliveryPayload(
                         delivery_id=delivery.id,
@@ -125,7 +147,6 @@ def run_once() -> int:
             processed += 1
 
     return processed
-
 
 def run_forever() -> None:
     logger.info("backup alert delivery worker started")
