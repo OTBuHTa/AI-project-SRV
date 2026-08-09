@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/v1/inventory", tags=["inventory"])
 def list_resource_inventory(
     resource_id: UUID,
     kind: str | None = Query(default=None),
+    lifecycle_status: str | None = Query(default=None),
     context=Depends(require_permission("resource.read")),
     db: Session = Depends(get_db),
 ):
@@ -35,6 +36,22 @@ def list_resource_inventory(
     )
     if kind is not None:
         query = query.where(ResourceInventoryItem.kind == kind)
+
+    if lifecycle_status is not None:
+        if lifecycle_status not in {
+            "observed",
+            "stale",
+            "absent",
+        }:
+            raise HTTPException(
+                status_code=422,
+                detail="invalid_lifecycle_status",
+            )
+
+        query = query.where(
+            ResourceInventoryItem.lifecycle_status
+            == lifecycle_status
+        )
 
     return db.scalars(
         query.order_by(
@@ -66,9 +83,14 @@ def resource_inventory_summary(
         )
     ).all()
     kinds = Counter(row.kind for row in rows)
+    lifecycle = Counter(
+        row.lifecycle_status
+        for row in rows
+    )
 
     return ResourceInventorySummary(
         resource_id=resource_id,
         total_items=len(rows),
         kinds=dict(kinds),
+        lifecycle=dict(lifecycle),
     )

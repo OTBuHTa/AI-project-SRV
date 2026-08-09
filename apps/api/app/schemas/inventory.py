@@ -43,3 +43,4 @@ class ResourceInventorySummary(BaseModel):
     resource_id: UUID
     total_items: int
     kinds: dict[str, int]
+    lifecycle: dict[str, int]
