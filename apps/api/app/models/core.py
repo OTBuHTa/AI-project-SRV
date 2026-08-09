@@ -185,6 +185,19 @@ class ResourceInventoryItem(Base):
         index=True,
     )
 
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+
+    lifecycle_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="observed",
+        index=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

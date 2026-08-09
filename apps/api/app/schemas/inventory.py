@@ -29,6 +29,8 @@ class InventoryItemOut(BaseModel):
     status: str
     attributes: dict
     observed_at: datetime
+    last_seen_at: datetime | None
+    lifecycle_status: str
     created_at: datetime
     updated_at: datetime
 
