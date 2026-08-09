@@ -9,6 +9,7 @@ from app.models.core import (
 )
 from app.services.backup_alert_events import sync_backup_alert_events
 from app.services.backup_alert_delivery_queue import enqueue_alert_delivery
+from app.services.notification_routing import find_matching_destinations
 from app.services.backup_alerts import evaluate_backup_alerts
 from app.services.backup_status import evaluate_backup_status
 
@@ -87,12 +88,21 @@ def sync_workspace_backup_alerts(
     )
 
     for event in events:
-        if event.code not in existing_active_codes:
+        if event.code in existing_active_codes:
+            continue
+
+        destinations = find_matching_destinations(
+            db,
+            event=event,
+        )
+
+        for destination in destinations:
             enqueue_alert_delivery(
                 db,
                 workspace_id=workspace_id,
                 alert_event_id=event.id,
-                channel="webhook",
+                channel=destination.channel,
+                destination_id=destination.id,
             )
 
     return len(events)

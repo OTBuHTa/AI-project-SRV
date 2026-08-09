@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.db.session import SessionLocal
-from app.models.core import BackupAlertEvent
+from app.models.core import BackupAlertEvent, NotificationDestination
 from app.services.backup_alert_delivery_queue import (
     claim_due_deliveries,
     mark_delivery_delivered,
@@ -25,10 +25,6 @@ BATCH_SIZE = 20
 
 def run_once() -> int:
     settings = get_settings()
-
-    if not settings.backup_alert_webhook_url:
-        logger.debug("backup alert webhook disabled")
-        return 0
 
     processed = 0
 
@@ -55,9 +51,40 @@ def run_once() -> int:
                 processed += 1
                 continue
 
+            destination = db.scalar(
+                select(NotificationDestination).where(
+                    NotificationDestination.id
+                    == delivery.destination_id,
+                    NotificationDestination.workspace_id
+                    == delivery.workspace_id,
+                    NotificationDestination.enabled.is_(True),
+                )
+            )
+
+            if destination is not None and destination.channel != "webhook":
+                mark_delivery_failed(
+                    db,
+                    delivery=delivery,
+                    error=(
+                        "unsupported notification channel: "
+                        f"{destination.channel}"
+                    ),
+                )
+                processed += 1
+                continue
+
+            if destination is None:
+                mark_delivery_failed(
+                    db,
+                    delivery=delivery,
+                    error="notification destination not found or disabled",
+                )
+                processed += 1
+                continue
+
             try:
                 deliver_webhook(
-                    url=settings.backup_alert_webhook_url,
+                    url=destination.endpoint,
                     timeout_seconds=(
                         settings.backup_alert_webhook_timeout_seconds
                     ),
