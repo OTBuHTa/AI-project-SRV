@@ -19,6 +19,7 @@ from app.db.session import SessionLocal
 from app.services.agent_status import evaluate_agent_statuses
 from app.api.v1.backups import router as backups_router
 from app.api.v1.notifications import router as notifications_router
+from app.api.v1.inventory import router as inventory_router
 
 settings = get_settings()
 
@@ -57,6 +58,7 @@ app.include_router(actions_router)
 app.include_router(ai_actions_router)
 app.include_router(backups_router)
 app.include_router(notifications_router)
+app.include_router(inventory_router)
 
 
 @app.get("/api/v1")
