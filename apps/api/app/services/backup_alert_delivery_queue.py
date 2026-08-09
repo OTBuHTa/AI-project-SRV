@@ -26,6 +26,7 @@ def enqueue_alert_delivery(
     workspace_id: str,
     alert_event_id: str,
     channel: str,
+    destination_id: str | None = None,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     now: datetime | None = None,
 ) -> BackupAlertDelivery:
@@ -38,6 +39,7 @@ def enqueue_alert_delivery(
             workspace_id=workspace_id,
             alert_event_id=alert_event_id,
             channel=channel,
+            destination_id=destination_id,
             status=PENDING,
             attempts=0,
             max_attempts=max_attempts,
@@ -46,7 +48,7 @@ def enqueue_alert_delivery(
             updated_at=now,
         )
         .on_conflict_do_nothing(
-            constraint="uq_backup_alert_delivery_event_channel"
+            constraint="uq_backup_alert_delivery_event_destination"
         )
     )
 
@@ -56,7 +58,7 @@ def enqueue_alert_delivery(
     delivery = db.scalar(
         select(BackupAlertDelivery).where(
             BackupAlertDelivery.alert_event_id == alert_event_id,
-            BackupAlertDelivery.channel == channel,
+            BackupAlertDelivery.destination_id == destination_id,
         )
     )
 

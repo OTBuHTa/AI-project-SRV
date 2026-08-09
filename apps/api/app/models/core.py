@@ -407,6 +407,119 @@ class BackupAlertEvent(Base):
         ),
     )
 
+class NotificationDestination(Base):
+    __tablename__ = "notification_destinations"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(36),
+        nullable=False,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+    )
+
+    channel: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="webhook",
+    )
+
+    endpoint: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        index=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "name",
+            name="uq_notification_destination_workspace_name",
+        ),
+    )
+
+
+class NotificationRoute(Base):
+    __tablename__ = "notification_routes"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(36),
+        nullable=False,
+        index=True,
+    )
+
+    destination_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("notification_destinations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    alert_code: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    severity: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        index=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class BackupAlertDelivery(Base):
     __tablename__ = "backup_alert_deliveries"
 
@@ -432,6 +545,13 @@ class BackupAlertDelivery(Base):
     channel: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
+    )
+
+    destination_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("notification_destinations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     status: Mapped[str] = mapped_column(
@@ -490,7 +610,7 @@ class BackupAlertDelivery(Base):
     __table_args__ = (
         UniqueConstraint(
             "alert_event_id",
-            "channel",
-            name="uq_backup_alert_delivery_event_channel",
+            "destination_id",
+            name="uq_backup_alert_delivery_event_destination",
         ),
     )
