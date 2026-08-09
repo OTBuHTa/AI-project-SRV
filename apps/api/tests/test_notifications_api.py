@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -80,19 +80,24 @@ def test_create_destination_uses_current_workspace():
     payload = NotificationDestinationCreate(
         name="operations",
         channel="webhook",
-        endpoint="http://receiver:18080/alerts",
+        endpoint="https://example.com/alerts",
     )
 
-    result = create_notification_destination(
-        payload,
-        context=context("workspace-1"),
-        db=db,
-    )
+    with patch(
+        "app.api.v1.notifications.validate_notification_endpoint"
+    ) as validate_endpoint:
+        result = create_notification_destination(
+            payload,
+            context=context("workspace-1"),
+            db=db,
+        )
+
+    validate_endpoint.assert_called_once()
 
     assert result.workspace_id == "workspace-1"
     assert result.name == "operations"
     assert result.channel == "webhook"
-    assert result.endpoint == "http://receiver:18080/alerts"
+    assert result.endpoint == "https://example.com/alerts"
 
     db.add.assert_called_once_with(result)
     db.commit.assert_called_once()
@@ -151,3 +156,24 @@ def test_create_route_uses_current_workspace():
     db.add.assert_called_once_with(result)
     db.commit.assert_called_once()
     db.refresh.assert_called_once_with(result)
+
+
+def test_create_destination_rejects_unsafe_endpoint():
+    db = MagicMock()
+
+    payload = NotificationDestinationCreate(
+        name="metadata",
+        channel="webhook",
+        endpoint="http://169.254.169.254/latest/meta-data",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        create_notification_destination(
+            payload,
+            context=context("workspace-1"),
+            db=db,
+        )
+
+    assert exc.value.status_code == 400
+    assert "link-local" in exc.value.detail
+    db.add.assert_not_called()

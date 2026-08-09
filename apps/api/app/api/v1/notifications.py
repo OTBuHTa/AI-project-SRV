@@ -7,6 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
 from app.db.session import get_db
+from app.core.config import get_settings
+from app.services.notification_endpoint_policy import (
+    NotificationEndpointPolicyError,
+    validate_notification_endpoint,
+)
 from app.models.core import (
     NotificationDestination,
     NotificationRoute,
@@ -25,6 +30,8 @@ router = APIRouter(
     prefix="/api/v1/notifications",
     tags=["notifications"],
 )
+
+settings = get_settings()
 
 
 def _get_destination(
@@ -110,6 +117,19 @@ def create_notification_destination(
             detail="unsupported_notification_channel",
         )
 
+    try:
+        validate_notification_endpoint(
+            payload.endpoint,
+            allow_private_networks=(
+                settings.notification_webhook_allow_private_networks
+            ),
+        )
+    except NotificationEndpointPolicyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
     destination = NotificationDestination(
         id=str(uuid4()),
         workspace_id=workspace_id,
@@ -157,6 +177,19 @@ def update_notification_destination(
         destination.name = payload.name
 
     if "endpoint" in payload.model_fields_set:
+        try:
+            validate_notification_endpoint(
+                payload.endpoint,
+                allow_private_networks=(
+                    settings.notification_webhook_allow_private_networks
+                ),
+            )
+        except NotificationEndpointPolicyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
         destination.endpoint = payload.endpoint
 
     if "enabled" in payload.model_fields_set:

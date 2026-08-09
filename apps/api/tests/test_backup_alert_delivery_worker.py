@@ -14,6 +14,7 @@ def test_worker_with_empty_queue(
 ):
     get_settings.return_value = SimpleNamespace(
         backup_alert_webhook_timeout_seconds=10.0,
+        notification_webhook_allow_private_networks=False,
     )
 
     db = MagicMock()
@@ -27,6 +28,7 @@ def test_worker_with_empty_queue(
 
 @patch("app.services.backup_alert_delivery_worker.mark_delivery_delivered")
 @patch("app.services.backup_alert_delivery_worker.deliver_webhook")
+@patch("app.services.backup_alert_delivery_worker.validate_notification_endpoint")
 @patch("app.services.backup_alert_delivery_worker.claim_due_deliveries")
 @patch("app.services.backup_alert_delivery_worker.get_settings")
 @patch("app.services.backup_alert_delivery_worker.SessionLocal")
@@ -34,11 +36,13 @@ def test_worker_delivers_to_destination(
     session_local,
     get_settings,
     claim_due,
+    validate_endpoint,
     deliver,
     mark_delivered,
 ):
     get_settings.return_value = SimpleNamespace(
         backup_alert_webhook_timeout_seconds=5.0,
+        notification_webhook_allow_private_networks=False,
     )
 
     delivery = SimpleNamespace(
@@ -91,6 +95,7 @@ def test_worker_delivers_to_destination(
 
 @patch("app.services.backup_alert_delivery_worker.mark_delivery_failed")
 @patch("app.services.backup_alert_delivery_worker.deliver_webhook")
+@patch("app.services.backup_alert_delivery_worker.validate_notification_endpoint")
 @patch("app.services.backup_alert_delivery_worker.claim_due_deliveries")
 @patch("app.services.backup_alert_delivery_worker.get_settings")
 @patch("app.services.backup_alert_delivery_worker.SessionLocal")
@@ -98,11 +103,13 @@ def test_worker_marks_transport_failure(
     session_local,
     get_settings,
     claim_due,
+    validate_endpoint,
     deliver,
     mark_failed,
 ):
     get_settings.return_value = SimpleNamespace(
         backup_alert_webhook_timeout_seconds=5.0,
+        notification_webhook_allow_private_networks=False,
     )
 
     delivery = SimpleNamespace(
@@ -162,6 +169,7 @@ def test_worker_fails_missing_destination(
 ):
     get_settings.return_value = SimpleNamespace(
         backup_alert_webhook_timeout_seconds=5.0,
+        notification_webhook_allow_private_networks=False,
     )
 
     delivery = SimpleNamespace(
@@ -286,3 +294,78 @@ def test_worker_rejects_unsupported_destination_channel(monkeypatch):
     assert failures == [
         "unsupported notification channel: email"
     ]
+
+
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "mark_delivery_failed"
+)
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "deliver_webhook"
+)
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "claim_due_deliveries"
+)
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "get_settings"
+)
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "SessionLocal"
+)
+def test_worker_blocks_unsafe_destination_endpoint(
+    session_local,
+    get_settings,
+    claim_due,
+    deliver,
+    mark_failed,
+):
+    get_settings.return_value = SimpleNamespace(
+        backup_alert_webhook_timeout_seconds=5.0,
+        notification_webhook_allow_private_networks=False,
+    )
+
+    delivery = SimpleNamespace(
+        id="delivery-ssrf",
+        workspace_id="workspace-1",
+        alert_event_id="event-1",
+        destination_id="destination-1",
+    )
+
+    event = SimpleNamespace(
+        id="event-1",
+        code="backup_missing",
+        severity="critical",
+        message="Backup missing",
+    )
+
+    destination = SimpleNamespace(
+        id="destination-1",
+        channel="webhook",
+        endpoint="http://169.254.169.254/latest/meta-data",
+    )
+
+    db = MagicMock()
+    session_local.return_value.__enter__.return_value = db
+    claim_due.return_value = [delivery]
+
+    db.scalar.side_effect = [
+        event,
+        destination,
+    ]
+
+    result = run_once()
+
+    assert result == 1
+
+    deliver.assert_not_called()
+
+    mark_failed.assert_called_once()
+
+    kwargs = mark_failed.call_args.kwargs
+
+    assert kwargs["delivery"] is delivery
+    assert "link-local" in str(kwargs["error"])

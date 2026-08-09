@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 90.0
     backup_alert_webhook_url: str = ""
     backup_alert_webhook_timeout_seconds: float = 10.0
+    notification_webhook_allow_private_networks: bool = False
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

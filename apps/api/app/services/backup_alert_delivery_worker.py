@@ -15,6 +15,9 @@ from app.services.backup_alert_delivery_transport import (
     DeliveryPayload,
     deliver_webhook,
 )
+from app.services.notification_endpoint_policy import (
+    validate_notification_endpoint,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -83,6 +86,13 @@ def run_once() -> int:
                 continue
 
             try:
+                validate_notification_endpoint(
+                    destination.endpoint,
+                    allow_private_networks=(
+                        settings.notification_webhook_allow_private_networks
+                    ),
+                )
+
                 deliver_webhook(
                     url=destination.endpoint,
                     timeout_seconds=(
@@ -125,7 +135,6 @@ def run_once() -> int:
             processed += 1
 
     return processed
-
 
 def run_forever() -> None:
     logger.info("backup alert delivery worker started")
