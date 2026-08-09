@@ -64,6 +64,7 @@ def test_worker_delivers_to_destination(
     destination = SimpleNamespace(
         id="destination-1",
         channel="webhook",
+        enabled=True,
         endpoint="https://example.invalid/hook",
     )
 
@@ -133,6 +134,7 @@ def test_worker_marks_transport_failure(
     destination = SimpleNamespace(
         id="destination-1",
         channel="webhook",
+        enabled=True,
         endpoint="https://example.invalid/hook",
     )
 
@@ -159,17 +161,32 @@ def test_worker_marks_transport_failure(
     )
 
 
-@patch("app.services.backup_alert_delivery_worker.mark_delivery_failed")
-@patch("app.services.backup_alert_delivery_worker.deliver_webhook")
-@patch("app.services.backup_alert_delivery_worker.claim_due_deliveries")
-@patch("app.services.backup_alert_delivery_worker.get_settings")
-@patch("app.services.backup_alert_delivery_worker.SessionLocal")
-def test_worker_fails_missing_destination(
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "mark_delivery_canceled"
+)
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "deliver_webhook"
+)
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "claim_due_deliveries"
+)
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "get_settings"
+)
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "SessionLocal"
+)
+def test_worker_cancels_missing_destination(
     session_local,
     get_settings,
     claim_due,
     deliver,
-    mark_failed,
+    mark_canceled,
 ):
     get_settings.return_value = SimpleNamespace(
         backup_alert_webhook_timeout_seconds=5.0,
@@ -203,14 +220,15 @@ def test_worker_fails_missing_destination(
     result = run_once()
 
     assert result == 1
-
     deliver.assert_not_called()
 
-    mark_failed.assert_called_once_with(
+    mark_canceled.assert_called_once_with(
         db,
         delivery=delivery,
-        error="notification destination not found or disabled",
+        reason="notification destination not found",
     )
+
+
 
 def test_worker_rejects_unsupported_destination_channel(monkeypatch):
     from types import SimpleNamespace
@@ -272,13 +290,13 @@ def test_worker_rejects_unsupported_destination_channel(monkeypatch):
     fake_scalar.calls = 0
     db.scalar = fake_scalar
 
-    failures = []
+    cancellations = []
 
     monkeypatch.setattr(
         worker,
-        "mark_delivery_failed",
-        lambda *_args, **kwargs: failures.append(
-            kwargs["error"]
+        "mark_delivery_canceled",
+        lambda *_args, **kwargs: cancellations.append(
+            kwargs["reason"]
         ),
     )
 
@@ -296,7 +314,7 @@ def test_worker_rejects_unsupported_destination_channel(monkeypatch):
     processed = worker.run_once()
 
     assert processed == 1
-    assert failures == [
+    assert cancellations == [
         "unsupported notification channel: email"
     ]
 
@@ -351,6 +369,7 @@ def test_worker_blocks_unsafe_destination_endpoint(
     destination = SimpleNamespace(
         id="destination-1",
         channel="webhook",
+        enabled=True,
         endpoint="http://169.254.169.254/latest/meta-data",
     )
 
@@ -375,3 +394,79 @@ def test_worker_blocks_unsafe_destination_endpoint(
 
     assert kwargs["delivery"] is delivery
     assert "link-local" in str(kwargs["error"])
+
+
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "mark_delivery_canceled"
+)
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "deliver_webhook"
+)
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "claim_due_deliveries"
+)
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "get_settings"
+)
+@patch(
+    "app.services.backup_alert_delivery_worker."
+    "SessionLocal"
+)
+def test_worker_cancels_disabled_destination(
+    session_local,
+    get_settings,
+    claim_due,
+    deliver,
+    mark_canceled,
+):
+    get_settings.return_value = SimpleNamespace(
+        backup_alert_webhook_timeout_seconds=5.0,
+        notification_webhook_allow_private_networks=False,
+        notification_webhook_signing_secret="test-secret",
+    )
+
+    delivery = SimpleNamespace(
+        id="delivery-disabled",
+        workspace_id="workspace-1",
+        alert_event_id="event-1",
+        destination_id="destination-1",
+    )
+
+    event = SimpleNamespace(
+        id="event-1",
+        code="backup_missing",
+        severity="critical",
+        message="Backup missing",
+    )
+
+    destination = SimpleNamespace(
+        id="destination-1",
+        workspace_id="workspace-1",
+        channel="webhook",
+        endpoint="https://example.invalid/hook",
+        enabled=False,
+    )
+
+    db = MagicMock()
+    session_local.return_value.__enter__.return_value = db
+    claim_due.return_value = [delivery]
+
+    db.scalar.side_effect = [
+        event,
+        destination,
+    ]
+
+    result = run_once()
+
+    assert result == 1
+    deliver.assert_not_called()
+
+    mark_canceled.assert_called_once_with(
+        db,
+        delivery=delivery,
+        reason="notification destination disabled",
+    )

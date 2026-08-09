@@ -8,6 +8,7 @@ from app.db.session import SessionLocal
 from app.models.core import BackupAlertEvent, NotificationDestination
 from app.services.backup_alert_delivery_queue import (
     claim_due_deliveries,
+    mark_delivery_canceled,
     mark_delivery_delivered,
     mark_delivery_failed,
 )
@@ -60,27 +61,35 @@ def run_once() -> int:
                     == delivery.destination_id,
                     NotificationDestination.workspace_id
                     == delivery.workspace_id,
-                    NotificationDestination.enabled.is_(True),
                 )
             )
 
-            if destination is not None and destination.channel != "webhook":
-                mark_delivery_failed(
+            if destination is None:
+                mark_delivery_canceled(
                     db,
                     delivery=delivery,
-                    error=(
-                        "unsupported notification channel: "
-                        f"{destination.channel}"
-                    ),
+                    reason="notification destination not found",
                 )
                 processed += 1
                 continue
 
-            if destination is None:
-                mark_delivery_failed(
+            if not destination.enabled:
+                mark_delivery_canceled(
                     db,
                     delivery=delivery,
-                    error="notification destination not found or disabled",
+                    reason="notification destination disabled",
+                )
+                processed += 1
+                continue
+
+            if destination.channel != "webhook":
+                mark_delivery_canceled(
+                    db,
+                    delivery=delivery,
+                    reason=(
+                        "unsupported notification channel: "
+                        f"{destination.channel}"
+                    ),
                 )
                 processed += 1
                 continue
