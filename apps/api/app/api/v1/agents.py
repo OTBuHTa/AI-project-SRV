@@ -22,8 +22,10 @@ from app.schemas.agents import (
 from app.services.audit import append_audit
 from app.services.realtime import hub
 from app.services.action_verification import verify_pending_actions
+from app.services.resource_inventory import reconcile_inventory_snapshot
 
 from app.schemas.actions import TaskOut, TaskResult
+from app.schemas.inventory import InventoryItemOut, InventorySnapshotInput
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
@@ -169,6 +171,43 @@ async def heartbeat(
         "agent_id":str(authenticated_agent.id), "status":resource.status if resource else payload.status,
         "metrics":payload.metrics.model_dump(), "docker":docker_data, "timestamp":now.isoformat(),
     })
+
+
+
+
+@router.post(
+    "/{agent_id}/inventory",
+    response_model=list[InventoryItemOut],
+)
+def submit_inventory(
+    agent_id: uuid.UUID,
+    payload: InventorySnapshotInput,
+    authenticated_agent: Agent = Depends(_authenticate_agent),
+    db: Session = Depends(get_db),
+):
+    if authenticated_agent.id != agent_id:
+        raise HTTPException(
+            status_code=403,
+            detail="agent_identity_mismatch",
+        )
+
+    try:
+        return reconcile_inventory_snapshot(
+            db,
+            workspace_id=authenticated_agent.workspace_id,
+            resource_id=authenticated_agent.resource_id,
+            items=[
+                item.model_dump()
+                for item in payload.items
+            ],
+        )
+    except ValueError as exc:
+        if str(exc) == "resource_not_found":
+            raise HTTPException(
+                status_code=404,
+                detail="resource_not_found",
+            ) from exc
+        raise
 
 
 @router.get("", response_model=list[AgentResponse])

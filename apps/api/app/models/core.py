@@ -120,6 +120,98 @@ class Resource(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class ResourceInventoryItem(Base):
+    __tablename__ = "resource_inventory_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "resource_id",
+            "kind",
+            "external_id",
+            name="uq_resource_inventory_identity",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+
+    resource_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("resources.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+
+    kind: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        index=True,
+    )
+
+    external_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="unknown",
+        index=True,
+    )
+
+    attributes: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+
+    lifecycle_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="observed",
+        index=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class EnrollmentToken(Base):
     __tablename__ = "agent_enrollment_tokens"
 

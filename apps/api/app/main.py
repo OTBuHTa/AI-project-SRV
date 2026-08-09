@@ -19,6 +19,7 @@ from app.db.session import SessionLocal
 from app.services.agent_status import evaluate_agent_statuses
 from app.api.v1.backups import router as backups_router
 from app.api.v1.notifications import router as notifications_router
+from app.api.v1.inventory import router as inventory_router
 
 settings = get_settings()
 
@@ -43,7 +44,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-app = FastAPI(title=settings.app_name, version="0.1.14-alpha", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.1.15-alpha", lifespan=lifespan)
 app.add_middleware(RequestContextMiddleware)
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -57,12 +58,13 @@ app.include_router(actions_router)
 app.include_router(ai_actions_router)
 app.include_router(backups_router)
 app.include_router(notifications_router)
+app.include_router(inventory_router)
 
 
 @app.get("/api/v1")
 def api_root():
     return {
         "name": settings.app_name,
-        "version": "0.1.14-alpha",
-        "phase": "Sprint 1 / AI Action Proposal + Verification",
+        "version": "0.1.15-alpha",
+        "phase": "Infrastructure Inventory + Lifecycle",
     }
