@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.middleware.request_context import RequestContextMiddleware
 from app.db.session import SessionLocal
 from app.services.agent_status import evaluate_agent_statuses
+from app.services.agent_token_lifecycle import cleanup_expired_pending_rotations
 from app.api.v1.backups import router as backups_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.inventory import router as inventory_router
@@ -28,6 +29,7 @@ async def _status_loop():
         try:
             with SessionLocal() as db:
                 evaluate_agent_statuses(db)
+                cleanup_expired_pending_rotations(db)
         except Exception:
             pass
         await asyncio.sleep(30)
