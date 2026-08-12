@@ -31,6 +31,19 @@ class AgentEnrollResponse(BaseModel):
     heartbeat_interval_seconds: int = 30
 
 
+class AgentTokenRotateResponse(BaseModel):
+    agent_id: uuid.UUID
+    agent_token: str
+    agent_token_expires_at: datetime
+    token_rotated_at: datetime
+
+
+class AgentRevokeResponse(BaseModel):
+    agent_id: uuid.UUID
+    revoked_at: datetime
+    status: str = "revoked"
+
+
 class SystemMetrics(BaseModel):
     cpu_percent: float = Field(ge=0, le=100)
     memory_percent: float = Field(ge=0, le=100)

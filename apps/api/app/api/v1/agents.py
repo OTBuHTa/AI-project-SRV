@@ -13,6 +13,8 @@ from app.models.core import Agent, EnrollmentToken, Resource, TelemetrySample, U
 from app.schemas.agents import (
     AgentEnrollRequest,
     AgentEnrollResponse,
+    AgentTokenRotateResponse,
+    AgentRevokeResponse,
     AgentHeartbeatRequest,
     AgentResponse,
     TelemetryPoint,
@@ -145,6 +147,131 @@ def enroll_agent(payload: AgentEnrollRequest, request: Request, db: Session = De
         resource_id=resource.id,
         agent_token=raw_agent_token,
         agent_token_expires_at=agent.token_expires_at,
+    )
+
+
+@router.post(
+    "/{agent_id}/token/rotate",
+    response_model=AgentTokenRotateResponse,
+)
+def rotate_agent_token(
+    agent_id: uuid.UUID,
+    request: Request,
+    context=Depends(require_permission("agent.update")),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    workspace, _ = context
+
+    agent = db.scalar(
+        select(Agent)
+        .where(
+            Agent.id == agent_id,
+            Agent.workspace_id == workspace.id,
+        )
+        .with_for_update()
+    )
+
+    if agent is None:
+        raise HTTPException(
+            status_code=404,
+            detail="agent_not_found",
+        )
+
+    if agent.revoked_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="agent_revoked",
+        )
+
+    now = datetime.now(UTC)
+    raw_token, token_hash = _new_token("agent")
+
+    agent.token_hash = token_hash
+    agent.token_expires_at = now + AGENT_TOKEN_TTL
+    agent.token_rotated_at = now
+
+    append_audit(
+        db,
+        action="agent.token.rotate",
+        actor_id=str(user.id),
+        organization_id=workspace.organization_id,
+        workspace_id=workspace.id,
+        request_id=getattr(request.state, "request_id", None),
+        target_type="agent",
+        target_id=str(agent.id),
+        details={
+            "token_expires_at": agent.token_expires_at.isoformat(),
+        },
+    )
+
+    db.commit()
+
+    return AgentTokenRotateResponse(
+        agent_id=agent.id,
+        agent_token=raw_token,
+        agent_token_expires_at=agent.token_expires_at,
+        token_rotated_at=agent.token_rotated_at,
+    )
+
+
+@router.post(
+    "/{agent_id}/revoke",
+    response_model=AgentRevokeResponse,
+)
+def revoke_agent(
+    agent_id: uuid.UUID,
+    request: Request,
+    context=Depends(require_permission("agent.revoke")),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    workspace, _ = context
+
+    agent = db.scalar(
+        select(Agent)
+        .where(
+            Agent.id == agent_id,
+            Agent.workspace_id == workspace.id,
+        )
+        .with_for_update()
+    )
+
+    if agent is None:
+        raise HTTPException(
+            status_code=404,
+            detail="agent_not_found",
+        )
+
+    if agent.revoked_at is None:
+        now = datetime.now(UTC)
+
+        agent.revoked_at = now
+        agent.status = "revoked"
+
+        resource = db.get(Resource, agent.resource_id)
+        if resource is not None:
+            resource.status = "offline"
+
+        append_audit(
+            db,
+            action="agent.revoke",
+            actor_id=str(user.id),
+            organization_id=workspace.organization_id,
+            workspace_id=workspace.id,
+            request_id=getattr(request.state, "request_id", None),
+            target_type="agent",
+            target_id=str(agent.id),
+            details={
+                "resource_id": str(agent.resource_id),
+            },
+        )
+
+        db.commit()
+
+    return AgentRevokeResponse(
+        agent_id=agent.id,
+        revoked_at=agent.revoked_at,
     )
 
 
