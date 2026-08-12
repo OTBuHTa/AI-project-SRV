@@ -27,7 +27,21 @@ class AgentEnrollResponse(BaseModel):
     agent_id: uuid.UUID
     resource_id: uuid.UUID
     agent_token: str
+    agent_token_expires_at: datetime
     heartbeat_interval_seconds: int = 30
+
+
+class AgentTokenRotateResponse(BaseModel):
+    agent_id: uuid.UUID
+    agent_token: str
+    agent_token_expires_at: datetime
+    token_rotated_at: datetime
+
+
+class AgentRevokeResponse(BaseModel):
+    agent_id: uuid.UUID
+    revoked_at: datetime
+    status: str = "revoked"
 
 
 class SystemMetrics(BaseModel):

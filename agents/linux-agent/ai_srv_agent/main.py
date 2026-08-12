@@ -61,6 +61,157 @@ def collect_docker() -> dict:
     return {"available":True,"containers_total":len(containers),"containers_running":running,"containers_stopped":len(containers)-running,"containers":containers[:256]}
 
 
+
+def collect_inventory() -> list[dict]:
+    items = []
+
+    cpu_freq = psutil.cpu_freq()
+    items.append({
+        "kind": "cpu",
+        "external_id": "cpu",
+        "name": platform.processor() or "CPU",
+        "status": "online",
+        "attributes": {
+            "logical_cores": psutil.cpu_count(logical=True) or 0,
+            "physical_cores": psutil.cpu_count(logical=False) or 0,
+            "frequency_mhz": (
+                cpu_freq.current if cpu_freq is not None else None
+            ),
+            "architecture": platform.machine(),
+        },
+    })
+
+    memory = psutil.virtual_memory()
+    items.append({
+        "kind": "memory",
+        "external_id": "memory",
+        "name": "System memory",
+        "status": "online",
+        "attributes": {
+            "total_bytes": memory.total,
+            "available_bytes": memory.available,
+        },
+    })
+
+    seen_mountpoints = set()
+
+    for partition in psutil.disk_partitions(all=False):
+        mountpoint = partition.mountpoint
+
+        if not mountpoint or mountpoint in seen_mountpoints:
+            continue
+
+        seen_mountpoints.add(mountpoint)
+
+        try:
+            usage = psutil.disk_usage(mountpoint)
+        except (OSError, PermissionError):
+            continue
+
+        items.append({
+            "kind": "filesystem",
+            "external_id": mountpoint,
+            "name": mountpoint,
+            "status": "online",
+            "attributes": {
+                "device": partition.device,
+                "fstype": partition.fstype,
+                "options": partition.opts,
+                "total_bytes": usage.total,
+                "used_bytes": usage.used,
+                "free_bytes": usage.free,
+                "percent": usage.percent,
+            },
+        })
+
+    addresses_by_interface = psutil.net_if_addrs()
+    stats_by_interface = psutil.net_if_stats()
+
+    for name in sorted(addresses_by_interface):
+        addresses = []
+
+        for address in addresses_by_interface[name]:
+            addresses.append({
+                "family": str(address.family),
+                "address": address.address,
+                "netmask": address.netmask,
+                "broadcast": address.broadcast,
+            })
+
+        stats = stats_by_interface.get(name)
+        is_up = stats.isup if stats is not None else False
+
+        items.append({
+            "kind": "network_interface",
+            "external_id": name,
+            "name": name,
+            "status": "online" if is_up else "offline",
+            "attributes": {
+                "is_up": is_up,
+                "speed_mbps": stats.speed if stats is not None else 0,
+                "mtu": stats.mtu if stats is not None else None,
+                "addresses": addresses,
+            },
+        })
+
+    docker = collect_docker()
+
+    if docker.get("available"):
+        items.append({
+            "kind": "docker_engine",
+            "external_id": "docker",
+            "name": "Docker",
+            "status": "online",
+            "attributes": {
+                "containers_total": docker.get("containers_total", 0),
+                "containers_running": docker.get("containers_running", 0),
+                "containers_stopped": docker.get("containers_stopped", 0),
+            },
+        })
+
+        for container in docker.get("containers", []):
+            external_id = container.get("name") or container.get("id")
+
+            if not external_id:
+                continue
+
+            state = container.get("state")
+
+            items.append({
+                "kind": "docker_container",
+                "external_id": str(external_id),
+                "name": container.get("name") or str(external_id),
+                "status": "online" if state == "running" else "offline",
+                "attributes": {
+                    "container_id": container.get("id"),
+                    "image": container.get("image"),
+                    "state": state,
+                    "status_text": container.get("status"),
+                },
+            })
+
+    return items
+
+
+def submit_inventory(state: dict) -> None:
+    headers = {
+        "Authorization": f"Bearer {state['agent_token']}",
+    }
+
+    response = httpx.post(
+        (
+            f"{state['api_url']}/api/v1/agents/"
+            f"{state['agent_id']}/inventory"
+        ),
+        json={"items": collect_inventory()},
+        headers=headers,
+        timeout=30,
+    )
+
+    response.raise_for_status()
+
+
+
 def enroll(api_url: str, enrollment_token: str, state_file: Path) -> dict:
     payload = {
         "enrollment_token": enrollment_token,
@@ -151,6 +302,7 @@ def main() -> None:
 
     while True:
         heartbeat(state)
+        submit_inventory(state)
         poll_and_execute_task(state)
         if args.once:
             return
