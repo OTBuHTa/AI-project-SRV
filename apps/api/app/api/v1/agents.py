@@ -304,6 +304,30 @@ def commit_own_agent_token_rotation(
             and agent.revoked_at is None
             and agent.token_rotated_at is not None
         ):
+            append_audit(
+                db,
+                action="agent.token.rotate.commit.recovered",
+                actor_id=str(agent.id),
+                workspace_id=agent.workspace_id,
+                request_id=getattr(
+                    request.state,
+                    "request_id",
+                    None,
+                ),
+                target_type="agent",
+                target_id=str(agent.id),
+                details={
+                    "token_expires_at": (
+                        agent.token_expires_at.isoformat()
+                    ),
+                    "token_rotated_at": (
+                        agent.token_rotated_at.isoformat()
+                    ),
+                },
+            )
+
+            db.commit()
+
             return AgentTokenRotateCommitResponse(
                 agent_id=agent.id,
                 agent_token_expires_at=(
@@ -346,9 +370,32 @@ def commit_own_agent_token_rotation(
         + AGENT_TOKEN_ROTATION_PREPARE_TTL
         <= now
     ):
+        expired_prepared_at = prepared_at
+
         agent.pending_token_hash = None
         agent.pending_token_expires_at = None
         agent.token_rotation_prepared_at = None
+
+        append_audit(
+            db,
+            action="agent.token.rotate.prepare.expired",
+            actor_id=str(agent.id),
+            workspace_id=agent.workspace_id,
+            request_id=getattr(
+                request.state,
+                "request_id",
+                None,
+            ),
+            target_type="agent",
+            target_id=str(agent.id),
+            details={
+                "token_rotation_prepared_at": (
+                    expired_prepared_at.isoformat()
+                ),
+                "expired_at": now.isoformat(),
+            },
+        )
+
         db.commit()
 
         raise HTTPException(
