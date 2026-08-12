@@ -29,6 +29,8 @@ from app.schemas.inventory import InventoryItemOut, InventorySnapshotInput
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
+AGENT_TOKEN_TTL = timedelta(days=90)
+
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
@@ -49,6 +51,8 @@ def _authenticate_agent(
     agent = db.scalar(select(Agent).where(Agent.token_hash == token_hash))
     if not agent or agent.revoked_at is not None:
         raise HTTPException(status_code=401, detail="invalid_agent_token")
+    if agent.token_expires_at <= datetime.now(UTC):
+        raise HTTPException(status_code=401, detail="expired_agent_token")
     return agent
 
 
@@ -90,7 +94,11 @@ def create_enrollment_token(
 @router.post("/enroll", response_model=AgentEnrollResponse, status_code=status.HTTP_201_CREATED)
 def enroll_agent(payload: AgentEnrollRequest, request: Request, db: Session = Depends(get_db)):
     token_hash = _hash_token(payload.enrollment_token)
-    enrollment = db.scalar(select(EnrollmentToken).where(EnrollmentToken.token_hash == token_hash))
+    enrollment = db.scalar(
+        select(EnrollmentToken)
+        .where(EnrollmentToken.token_hash == token_hash)
+        .with_for_update()
+    )
     now = datetime.now(UTC)
     if not enrollment or enrollment.used_at is not None or enrollment.expires_at <= now:
         raise HTTPException(status_code=401, detail="invalid_or_expired_enrollment_token")
@@ -114,6 +122,7 @@ def enroll_agent(payload: AgentEnrollRequest, request: Request, db: Session = De
         version=payload.agent_version,
         status="online",
         token_hash=agent_token_hash,
+        token_expires_at=now + AGENT_TOKEN_TTL,
         capabilities=sorted(set(payload.capabilities)),
         last_seen_at=now,
     )
@@ -131,7 +140,12 @@ def enroll_agent(payload: AgentEnrollRequest, request: Request, db: Session = De
         details={"hostname": payload.hostname, "agent_version": payload.agent_version},
     )
     db.commit()
-    return AgentEnrollResponse(agent_id=agent.id, resource_id=resource.id, agent_token=raw_agent_token)
+    return AgentEnrollResponse(
+        agent_id=agent.id,
+        resource_id=resource.id,
+        agent_token=raw_agent_token,
+        agent_token_expires_at=agent.token_expires_at,
+    )
 
 
 @router.post("/{agent_id}/heartbeat", status_code=status.HTTP_204_NO_CONTENT)

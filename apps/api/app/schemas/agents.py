@@ -27,6 +27,7 @@ class AgentEnrollResponse(BaseModel):
     agent_id: uuid.UUID
     resource_id: uuid.UUID
     agent_token: str
+    agent_token_expires_at: datetime
     heartbeat_interval_seconds: int = 30
 
 
