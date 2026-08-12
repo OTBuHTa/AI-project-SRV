@@ -432,6 +432,20 @@ def rotate_agent_token(
         )
 
     now = datetime.now(UTC)
+
+    pending_rotation_invalidated = any(
+        value is not None
+        for value in (
+            agent.pending_token_hash,
+            agent.pending_token_expires_at,
+            agent.token_rotation_prepared_at,
+        )
+    )
+
+    agent.pending_token_hash = None
+    agent.pending_token_expires_at = None
+    agent.token_rotation_prepared_at = None
+
     raw_token, token_hash = _new_token("agent")
 
     agent.token_hash = token_hash
@@ -449,6 +463,9 @@ def rotate_agent_token(
         target_id=str(agent.id),
         details={
             "token_expires_at": agent.token_expires_at.isoformat(),
+            "pending_rotation_invalidated": (
+                pending_rotation_invalidated
+            ),
         },
     )
 
@@ -493,6 +510,19 @@ def revoke_agent(
     if agent.revoked_at is None:
         now = datetime.now(UTC)
 
+        pending_rotation_invalidated = any(
+            value is not None
+            for value in (
+                agent.pending_token_hash,
+                agent.pending_token_expires_at,
+                agent.token_rotation_prepared_at,
+            )
+        )
+
+        agent.pending_token_hash = None
+        agent.pending_token_expires_at = None
+        agent.token_rotation_prepared_at = None
+
         agent.revoked_at = now
         agent.status = "revoked"
 
@@ -511,6 +541,9 @@ def revoke_agent(
             target_id=str(agent.id),
             details={
                 "resource_id": str(agent.resource_id),
+                "pending_rotation_invalidated": (
+                    pending_rotation_invalidated
+                ),
             },
         )
 

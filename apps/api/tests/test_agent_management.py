@@ -84,6 +84,9 @@ def test_rotate_replaces_token_and_sets_expiry():
         token_hash=old_hash,
         token_expires_at=datetime.now(UTC) + timedelta(days=1),
         token_rotated_at=None,
+        pending_token_hash=None,
+        pending_token_expires_at=None,
+        token_rotation_prepared_at=None,
         revoked_at=None,
     )
 
@@ -141,6 +144,9 @@ def test_revoke_marks_agent_and_resource_offline():
         id=uuid4(),
         workspace_id=workspace.id,
         resource_id=uuid4(),
+        pending_token_hash=None,
+        pending_token_expires_at=None,
+        token_rotation_prepared_at=None,
         revoked_at=None,
         status="online",
     )
@@ -200,3 +206,87 @@ def test_revoke_is_idempotent():
     assert result.revoked_at == revoked_at
     audit.assert_not_called()
     db.commit.assert_not_called()
+
+
+def test_admin_rotate_invalidates_pending_rotation():
+    workspace = _workspace()
+
+    agent = SimpleNamespace(
+        id=uuid4(),
+        workspace_id=workspace.id,
+        resource_id=uuid4(),
+        token_hash=_hash_token("agent_old"),
+        token_expires_at=datetime.now(UTC) + timedelta(days=1),
+        token_rotated_at=None,
+        pending_token_hash=_hash_token("agent_pending"),
+        pending_token_expires_at=datetime.now(UTC) + timedelta(days=90),
+        token_rotation_prepared_at=datetime.now(UTC),
+        revoked_at=None,
+    )
+
+    db = MagicMock()
+    db.scalar.return_value = agent
+
+    with patch(
+        "app.api.v1.agents.append_audit"
+    ) as audit:
+        rotate_agent_token(
+            agent_id=agent.id,
+            request=_request(),
+            context=(workspace, None),
+            user=_user(),
+            db=db,
+        )
+
+    assert agent.pending_token_hash is None
+    assert agent.pending_token_expires_at is None
+    assert agent.token_rotation_prepared_at is None
+
+    details = audit.call_args.kwargs["details"]
+    assert details["pending_rotation_invalidated"] is True
+
+    db.commit.assert_called_once()
+
+
+def test_revoke_invalidates_pending_rotation():
+    workspace = _workspace()
+
+    agent = SimpleNamespace(
+        id=uuid4(),
+        workspace_id=workspace.id,
+        resource_id=uuid4(),
+        pending_token_hash=_hash_token("agent_pending"),
+        pending_token_expires_at=datetime.now(UTC) + timedelta(days=90),
+        token_rotation_prepared_at=datetime.now(UTC),
+        revoked_at=None,
+        status="online",
+    )
+
+    resource = SimpleNamespace(status="online")
+
+    db = MagicMock()
+    db.scalar.return_value = agent
+    db.get.return_value = resource
+
+    with patch(
+        "app.api.v1.agents.append_audit"
+    ) as audit:
+        revoke_agent(
+            agent_id=agent.id,
+            request=_request(),
+            context=(workspace, None),
+            user=_user(),
+            db=db,
+        )
+
+    assert agent.pending_token_hash is None
+    assert agent.pending_token_expires_at is None
+    assert agent.token_rotation_prepared_at is None
+
+    assert agent.status == "revoked"
+    assert resource.status == "offline"
+
+    details = audit.call_args.kwargs["details"]
+    assert details["pending_rotation_invalidated"] is True
+
+    db.commit.assert_called_once()
