@@ -38,6 +38,19 @@ class AgentTokenRotateResponse(BaseModel):
     token_rotated_at: datetime
 
 
+class AgentTokenRotatePrepareResponse(BaseModel):
+    agent_id: uuid.UUID
+    pending_agent_token: str
+    pending_agent_token_expires_at: datetime
+    token_rotation_prepared_at: datetime
+
+
+class AgentTokenRotateCommitResponse(BaseModel):
+    agent_id: uuid.UUID
+    agent_token_expires_at: datetime
+    token_rotated_at: datetime
+
+
 class AgentRevokeResponse(BaseModel):
     agent_id: uuid.UUID
     revoked_at: datetime

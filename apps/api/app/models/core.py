@@ -82,8 +82,6 @@ class RefreshSession(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    token_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -238,6 +236,28 @@ class Agent(Base):
     version: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(32), default="online")
     token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    token_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    token_rotated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    pending_token_hash: Mapped[str | None] = mapped_column(
+        String(128),
+        unique=True,
+        index=True,
+        nullable=True,
+    )
+    pending_token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    token_rotation_prepared_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     capabilities: Mapped[list] = mapped_column(JSONB, default=list)
     last_metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

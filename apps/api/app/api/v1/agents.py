@@ -14,6 +14,8 @@ from app.schemas.agents import (
     AgentEnrollRequest,
     AgentEnrollResponse,
     AgentTokenRotateResponse,
+    AgentTokenRotatePrepareResponse,
+    AgentTokenRotateCommitResponse,
     AgentRevokeResponse,
     AgentHeartbeatRequest,
     AgentResponse,
@@ -32,6 +34,7 @@ from app.schemas.inventory import InventoryItemOut, InventorySnapshotInput
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
 AGENT_TOKEN_TTL = timedelta(days=90)
+AGENT_TOKEN_ROTATION_PREPARE_TTL = timedelta(minutes=15)
 
 
 def _hash_token(token: str) -> str:
@@ -148,6 +151,326 @@ def enroll_agent(payload: AgentEnrollRequest, request: Request, db: Session = De
         agent_token=raw_agent_token,
         agent_token_expires_at=agent.token_expires_at,
     )
+
+
+
+def _extract_bearer_token(
+    authorization: str | None,
+) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="agent_authentication_required",
+        )
+
+    token = authorization.removeprefix("Bearer ").strip()
+
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="agent_authentication_required",
+        )
+
+    return token
+
+
+
+@router.post(
+    "/token/rotate-self/prepare",
+    response_model=AgentTokenRotatePrepareResponse,
+)
+def prepare_own_agent_token_rotation(
+    request: Request,
+    authorization: str | None = Header(
+        default=None,
+        alias="Authorization",
+    ),
+    db: Session = Depends(get_db),
+):
+    raw_current_token = _extract_bearer_token(
+        authorization,
+    )
+    current_token_hash = _hash_token(
+        raw_current_token,
+    )
+
+    agent = db.scalar(
+        select(Agent)
+        .where(
+            Agent.token_hash == current_token_hash,
+        )
+        .with_for_update()
+    )
+
+    now = datetime.now(UTC)
+
+    if agent is None or agent.revoked_at is not None:
+        raise HTTPException(
+            status_code=401,
+            detail="invalid_agent_token",
+        )
+
+    if agent.token_expires_at <= now:
+        raise HTTPException(
+            status_code=401,
+            detail="expired_agent_token",
+        )
+
+    raw_pending_token, pending_token_hash = (
+        _new_token("agent")
+    )
+
+    agent.pending_token_hash = pending_token_hash
+    agent.pending_token_expires_at = (
+        now + AGENT_TOKEN_TTL
+    )
+    agent.token_rotation_prepared_at = now
+
+    append_audit(
+        db,
+        action="agent.token.rotate.prepare",
+        actor_id=str(agent.id),
+        workspace_id=agent.workspace_id,
+        request_id=getattr(
+            request.state,
+            "request_id",
+            None,
+        ),
+        target_type="agent",
+        target_id=str(agent.id),
+        details={
+            "pending_token_expires_at":
+                agent.pending_token_expires_at.isoformat(),
+        },
+    )
+
+    db.commit()
+
+    return AgentTokenRotatePrepareResponse(
+        agent_id=agent.id,
+        pending_agent_token=raw_pending_token,
+        pending_agent_token_expires_at=(
+            agent.pending_token_expires_at
+        ),
+        token_rotation_prepared_at=(
+            agent.token_rotation_prepared_at
+        ),
+    )
+
+
+@router.post(
+    "/token/rotate-self/commit",
+    response_model=AgentTokenRotateCommitResponse,
+)
+def commit_own_agent_token_rotation(
+    request: Request,
+    authorization: str | None = Header(
+        default=None,
+        alias="Authorization",
+    ),
+    db: Session = Depends(get_db),
+):
+    raw_pending_token = _extract_bearer_token(
+        authorization,
+    )
+    presented_hash = _hash_token(
+        raw_pending_token,
+    )
+    now = datetime.now(UTC)
+
+    agent = db.scalar(
+        select(Agent)
+        .where(
+            Agent.pending_token_hash
+            == presented_hash,
+        )
+        .with_for_update()
+    )
+
+    if agent is None:
+        # Idempotent retry after a successful commit:
+        # the presented pending token is now active.
+        agent = db.scalar(
+            select(Agent)
+            .where(
+                Agent.token_hash
+                == presented_hash,
+            )
+            .with_for_update()
+        )
+
+        if (
+            agent is not None
+            and agent.revoked_at is None
+            and agent.token_rotated_at is not None
+        ):
+            return AgentTokenRotateCommitResponse(
+                agent_id=agent.id,
+                agent_token_expires_at=(
+                    agent.token_expires_at
+                ),
+                token_rotated_at=(
+                    agent.token_rotated_at
+                ),
+            )
+
+        raise HTTPException(
+            status_code=401,
+            detail="invalid_pending_agent_token",
+        )
+
+    if agent.revoked_at is not None:
+        raise HTTPException(
+            status_code=401,
+            detail="invalid_pending_agent_token",
+        )
+
+    prepared_at = (
+        agent.token_rotation_prepared_at
+    )
+    pending_expires_at = (
+        agent.pending_token_expires_at
+    )
+
+    if (
+        prepared_at is None
+        or pending_expires_at is None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="rotation_not_prepared",
+        )
+
+    if (
+        prepared_at
+        + AGENT_TOKEN_ROTATION_PREPARE_TTL
+        <= now
+    ):
+        agent.pending_token_hash = None
+        agent.pending_token_expires_at = None
+        agent.token_rotation_prepared_at = None
+        db.commit()
+
+        raise HTTPException(
+            status_code=401,
+            detail="rotation_prepare_expired",
+        )
+
+    agent.token_hash = agent.pending_token_hash
+    agent.token_expires_at = (
+        agent.pending_token_expires_at
+    )
+    agent.token_rotated_at = now
+
+    agent.pending_token_hash = None
+    agent.pending_token_expires_at = None
+    agent.token_rotation_prepared_at = None
+
+    append_audit(
+        db,
+        action="agent.token.rotate.commit",
+        actor_id=str(agent.id),
+        workspace_id=agent.workspace_id,
+        request_id=getattr(
+            request.state,
+            "request_id",
+            None,
+        ),
+        target_type="agent",
+        target_id=str(agent.id),
+        details={
+            "token_expires_at":
+                agent.token_expires_at.isoformat(),
+        },
+    )
+
+    db.commit()
+
+    return AgentTokenRotateCommitResponse(
+        agent_id=agent.id,
+        agent_token_expires_at=(
+            agent.token_expires_at
+        ),
+        token_rotated_at=(
+            agent.token_rotated_at
+        ),
+    )
+
+
+@router.post(
+    "/token/rotate-self",
+    response_model=AgentTokenRotateResponse,
+)
+def rotate_own_agent_token(
+    request: Request,
+    authorization: str | None = Header(
+        default=None,
+        alias="Authorization",
+    ),
+    db: Session = Depends(get_db),
+):
+    raw_current_token = _extract_bearer_token(
+        authorization,
+    )
+    current_token_hash = _hash_token(
+        raw_current_token,
+    )
+
+    agent = db.scalar(
+        select(Agent)
+        .where(
+            Agent.token_hash == current_token_hash,
+        )
+        .with_for_update()
+    )
+
+    now = datetime.now(UTC)
+
+    if agent is None or agent.revoked_at is not None:
+        raise HTTPException(
+            status_code=401,
+            detail="invalid_agent_token",
+        )
+
+    if agent.token_expires_at <= now:
+        raise HTTPException(
+            status_code=401,
+            detail="expired_agent_token",
+        )
+
+    raw_token, token_hash = _new_token("agent")
+
+    agent.token_hash = token_hash
+    agent.token_expires_at = now + AGENT_TOKEN_TTL
+    agent.token_rotated_at = now
+
+    append_audit(
+        db,
+        action="agent.token.rotate.self",
+        actor_id=str(agent.id),
+        workspace_id=agent.workspace_id,
+        request_id=getattr(
+            request.state,
+            "request_id",
+            None,
+        ),
+        target_type="agent",
+        target_id=str(agent.id),
+        details={
+            "token_expires_at":
+                agent.token_expires_at.isoformat(),
+        },
+    )
+
+    db.commit()
+
+    return AgentTokenRotateResponse(
+        agent_id=agent.id,
+        agent_token=raw_token,
+        agent_token_expires_at=agent.token_expires_at,
+        token_rotated_at=agent.token_rotated_at,
+    )
+
 
 
 @router.post(
