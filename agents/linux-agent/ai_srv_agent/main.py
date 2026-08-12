@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import os
 import platform
 import socket
@@ -11,6 +12,10 @@ import httpx
 import psutil
 
 from ai_srv_agent import __version__
+from ai_srv_agent.reliability import retry_http
+from ai_srv_agent.state import load_state, save_state
+
+LOGGER = logging.getLogger("ai_srv_agent")
 
 CAPABILITIES = [
     "system.metrics.read",
@@ -198,17 +203,21 @@ def submit_inventory(state: dict) -> None:
         "Authorization": f"Bearer {state['agent_token']}",
     }
 
-    response = httpx.post(
-        (
-            f"{state['api_url']}/api/v1/agents/"
-            f"{state['agent_id']}/inventory"
-        ),
-        json={"items": collect_inventory()},
-        headers=headers,
-        timeout=30,
-    )
+    payload = {"items": collect_inventory()}
 
-    response.raise_for_status()
+    def request() -> None:
+        response = httpx.post(
+            (
+                f"{state['api_url']}/api/v1/agents/"
+                f"{state['agent_id']}/inventory"
+            ),
+            json=payload,
+            headers=headers,
+            timeout=30,
+        )
+        response.raise_for_status()
+
+    retry_http(request)
 
 
 
@@ -221,16 +230,18 @@ def enroll(api_url: str, enrollment_token: str, state_file: Path) -> dict:
         "architecture": platform.machine(),
         "capabilities": CAPABILITIES,
     }
-    response = httpx.post(f"{api_url}/api/v1/agents/enroll", json=payload, timeout=20)
-    response.raise_for_status()
-    state = response.json()
+    def request() -> httpx.Response:
+        response = httpx.post(
+            f"{api_url}/api/v1/agents/enroll",
+            json=payload,
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response
+
+    state = retry_http(request).json()
     state["api_url"] = api_url
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    state_file.write_text(json.dumps(state, indent=2))
-    try:
-        state_file.chmod(0o600)
-    except OSError:
-        pass
+    save_state(state_file, state)
     return state
 
 
@@ -243,13 +254,16 @@ def heartbeat(state: dict) -> None:
         "docker": collect_docker(),
     }
     headers = {"Authorization": f"Bearer {state['agent_token']}"}
-    response = httpx.post(
-        f"{state['api_url']}/api/v1/agents/{state['agent_id']}/heartbeat",
-        json=payload,
-        headers=headers,
-        timeout=20,
-    )
-    response.raise_for_status()
+    def request() -> None:
+        response = httpx.post(
+            f"{state['api_url']}/api/v1/agents/{state['agent_id']}/heartbeat",
+            json=payload,
+            headers=headers,
+            timeout=20,
+        )
+        response.raise_for_status()
+
+    retry_http(request)
 
 
 
@@ -275,17 +289,51 @@ def execute_task(task: dict) -> dict:
 
 def poll_and_execute_task(state: dict) -> None:
     headers = {"Authorization": f"Bearer {state['agent_token']}"}
-    response = httpx.get(f"{state['api_url']}/api/v1/agents/{state['agent_id']}/tasks/next", headers=headers, timeout=20)
-    response.raise_for_status()
-    task = response.json()
+
+    def poll() -> httpx.Response:
+        response = httpx.get(
+            f"{state['api_url']}/api/v1/agents/{state['agent_id']}/tasks/next",
+            headers=headers,
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response
+
+    task = retry_http(poll).json()
     if not task:
         return
     result = execute_task(task)
-    submit = httpx.post(f"{state['api_url']}/api/v1/agents/{state['agent_id']}/tasks/{task['task_id']}/result", json=result, headers=headers, timeout=20)
-    submit.raise_for_status()
+
+    def submit_result() -> None:
+        response = httpx.post(
+            f"{state['api_url']}/api/v1/agents/{state['agent_id']}/tasks/{task['task_id']}/result",
+            json=result,
+            headers=headers,
+            timeout=20,
+        )
+        response.raise_for_status()
+
+    retry_http(submit_result)
+
+
+def run_cycle(state: dict) -> None:
+    operations = (
+        ("heartbeat", heartbeat),
+        ("inventory", submit_inventory),
+        ("task polling", poll_and_execute_task),
+    )
+    for name, operation in operations:
+        try:
+            operation(state)
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
+            LOGGER.warning("%s failed; agent will retry next cycle: %s", name, exc)
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=os.getenv("AI_SRV_LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
     parser = argparse.ArgumentParser(description="AI-project SRV read-only Linux agent")
     parser.add_argument("--api-url", default=os.getenv("AI_SRV_API_URL", "http://127.0.0.1:8000"))
     parser.add_argument("--enrollment-token", default=os.getenv("AI_SRV_ENROLLMENT_TOKEN"))
@@ -294,16 +342,14 @@ def main() -> None:
     args = parser.parse_args()
     state_file = Path(args.state_file)
     if state_file.exists():
-        state = json.loads(state_file.read_text())
+        state = load_state(state_file)
     elif args.enrollment_token:
         state = enroll(args.api_url.rstrip("/"), args.enrollment_token, state_file)
     else:
         raise SystemExit("Enrollment token required for first start")
 
     while True:
-        heartbeat(state)
-        submit_inventory(state)
-        poll_and_execute_task(state)
+        run_cycle(state)
         if args.once:
             return
         time.sleep(int(state.get("heartbeat_interval_seconds", 30)))
