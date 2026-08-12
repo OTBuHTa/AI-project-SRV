@@ -68,7 +68,22 @@ def get_agent_token_lifecycle_diagnostics(
 
     oldest_pending = row.oldest_pending_prepared_at
 
+    issues = []
+
+    if row.expired_pending_rotations:
+        issues.append("expired_pending_rotations")
+
+    if row.incomplete_pending_rotations:
+        issues.append("incomplete_pending_rotations")
+
+    if row.revoked_with_pending_rotation:
+        issues.append("revoked_with_pending_rotation")
+
+    status = "degraded" if issues else "healthy"
+
     return {
+        "status": status,
+        "issues": issues,
         "workspace_id": str(workspace_id),
         "agents_total": row.agents_total,
         "pending_rotations": row.pending_rotations,

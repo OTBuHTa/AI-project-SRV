@@ -36,6 +36,11 @@ def test_agent_token_lifecycle_diagnostics_aggregate():
     )
 
     assert result == {
+        "status": "degraded",
+        "issues": [
+            "expired_pending_rotations",
+            "incomplete_pending_rotations",
+        ],
         "workspace_id": str(workspace_id),
         "agents_total": 12,
         "pending_rotations": 3,
@@ -61,6 +66,8 @@ def test_monitoring_endpoint_scopes_diagnostics_to_workspace():
     db = MagicMock()
 
     expected = {
+        "status": "healthy",
+        "issues": [],
         "workspace_id": str(workspace_id),
         "agents_total": 4,
         "pending_rotations": 1,
@@ -87,3 +94,58 @@ def test_monitoring_endpoint_scopes_diagnostics_to_workspace():
         db,
         workspace_id,
     )
+
+
+def test_agent_token_lifecycle_diagnostics_healthy():
+    now = datetime.now(UTC)
+    workspace_id = uuid.uuid4()
+
+    row = SimpleNamespace(
+        agents_total=8,
+        pending_rotations=1,
+        expired_pending_rotations=0,
+        incomplete_pending_rotations=0,
+        revoked_with_pending_rotation=0,
+        oldest_pending_prepared_at=now - timedelta(minutes=2),
+    )
+
+    db = MagicMock()
+    db.execute.return_value.one.return_value = row
+
+    result = get_agent_token_lifecycle_diagnostics(
+        db,
+        workspace_id,
+        now=now,
+    )
+
+    assert result["status"] == "healthy"
+    assert result["issues"] == []
+    assert result["pending_rotations"] == 1
+
+
+def test_agent_token_lifecycle_diagnostics_revoked_pending_is_degraded():
+    now = datetime.now(UTC)
+    workspace_id = uuid.uuid4()
+
+    row = SimpleNamespace(
+        agents_total=3,
+        pending_rotations=1,
+        expired_pending_rotations=0,
+        incomplete_pending_rotations=0,
+        revoked_with_pending_rotation=1,
+        oldest_pending_prepared_at=now - timedelta(minutes=1),
+    )
+
+    db = MagicMock()
+    db.execute.return_value.one.return_value = row
+
+    result = get_agent_token_lifecycle_diagnostics(
+        db,
+        workspace_id,
+        now=now,
+    )
+
+    assert result["status"] == "degraded"
+    assert result["issues"] == [
+        "revoked_with_pending_rotation",
+    ]
