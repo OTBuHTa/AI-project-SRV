@@ -8,6 +8,7 @@ from app.db.session import SessionLocal, get_db
 from app.models.core import Membership
 from app.services.realtime import hub
 from app.services.agent_status import OFFLINE_AFTER_SECONDS, evaluate_agent_statuses
+from app.services.agent_token_diagnostics import get_agent_token_lifecycle_diagnostics
 
 router=APIRouter(prefix="/api/v1/monitoring", tags=["monitoring"])
 
@@ -16,6 +17,18 @@ def evaluate_status(context=Depends(require_permission("agent.read")), db: Sessi
     workspace,_=context
     evaluated, changed = evaluate_agent_statuses(db, workspace.id)
     return {"evaluated":evaluated,"changed":changed,"offline_after_seconds":OFFLINE_AFTER_SECONDS}
+
+@router.get("/agent-token-lifecycle")
+def agent_token_lifecycle_diagnostics(
+    context=Depends(require_permission("agent.read")),
+    db: Session=Depends(get_db),
+):
+    workspace, _ = context
+    return get_agent_token_lifecycle_diagnostics(
+        db,
+        workspace.id,
+    )
+
 
 @router.websocket("/ws/{workspace_id}")
 async def workspace_ws(websocket: WebSocket, workspace_id: uuid.UUID, token: str):
