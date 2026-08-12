@@ -1,6 +1,6 @@
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -208,18 +208,29 @@ def test_commit_is_idempotent_after_promotion():
     try:
         client = TestClient(app)
 
-        response = client.post(
-            "/api/v1/agents/token/rotate-self/commit",
-            headers={
-                "Authorization":
-                    f"Bearer {PENDING_TOKEN}",
-            },
-        )
+        with patch(
+            "app.api.v1.agents.append_audit"
+        ) as audit:
+            response = client.post(
+                "/api/v1/agents/token/rotate-self/commit",
+                headers={
+                    "Authorization":
+                        f"Bearer {PENDING_TOKEN}",
+                },
+            )
 
         assert response.status_code == 200
         assert response.json()["agent_id"] == str(
             agent.id
         )
+
+        audit.assert_called_once()
+        assert (
+            audit.call_args.kwargs["action"]
+            == "agent.token.rotate.commit.recovered"
+        )
+
+        db.commit.assert_called_once()
     finally:
         app.dependency_overrides.clear()
 
@@ -252,5 +263,137 @@ def test_commit_rejects_unknown_pending_token():
             response.json()["detail"]
             == "invalid_pending_agent_token"
         )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_expired_prepare_is_audited():
+    agent = _make_agent()
+
+    agent.pending_token_hash = (
+        agents_api._hash_token(PENDING_TOKEN)
+    )
+    agent.pending_token_expires_at = (
+        datetime.now(UTC) + timedelta(days=90)
+    )
+    agent.token_rotation_prepared_at = (
+        datetime.now(UTC)
+        - agents_api.AGENT_TOKEN_ROTATION_PREPARE_TTL
+        - timedelta(seconds=1)
+    )
+
+    db = MagicMock()
+    db.scalar.return_value = agent
+
+    def override_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_db
+
+    try:
+        client = TestClient(app)
+
+        with patch(
+            "app.api.v1.agents.append_audit"
+        ) as audit:
+            response = client.post(
+                "/api/v1/agents/token/rotate-self/commit",
+                headers={
+                    "Authorization":
+                        f"Bearer {PENDING_TOKEN}",
+                },
+            )
+
+        assert response.status_code == 401
+        assert (
+            response.json()["detail"]
+            == "rotation_prepare_expired"
+        )
+
+        audit.assert_called_once()
+
+        kwargs = audit.call_args.kwargs
+
+        assert (
+            kwargs["action"]
+            == "agent.token.rotate.prepare.expired"
+        )
+        assert kwargs["actor_id"] == str(agent.id)
+        assert kwargs["target_id"] == str(agent.id)
+
+        details = kwargs["details"]
+
+        assert "token_rotation_prepared_at" in details
+        assert "expired_at" in details
+
+        assert "pending_token_hash" not in details
+        assert "agent_token" not in details
+
+        assert agent.pending_token_hash is None
+        assert agent.pending_token_expires_at is None
+        assert agent.token_rotation_prepared_at is None
+
+        db.commit.assert_called_once()
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_idempotent_commit_recovery_is_audited():
+    agent = _make_agent()
+
+    agent.token_hash = (
+        agents_api._hash_token(PENDING_TOKEN)
+    )
+    agent.token_rotated_at = datetime.now(UTC)
+    agent.token_expires_at = (
+        datetime.now(UTC) + timedelta(days=90)
+    )
+
+    db = MagicMock()
+    db.scalar.side_effect = [
+        None,
+        agent,
+    ]
+
+    def override_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_db
+
+    try:
+        client = TestClient(app)
+
+        with patch(
+            "app.api.v1.agents.append_audit"
+        ) as audit:
+            response = client.post(
+                "/api/v1/agents/token/rotate-self/commit",
+                headers={
+                    "Authorization":
+                        f"Bearer {PENDING_TOKEN}",
+                },
+            )
+
+        assert response.status_code == 200
+
+        audit.assert_called_once()
+
+        kwargs = audit.call_args.kwargs
+
+        assert (
+            kwargs["action"]
+            == "agent.token.rotate.commit.recovered"
+        )
+        assert kwargs["actor_id"] == str(agent.id)
+        assert kwargs["target_id"] == str(agent.id)
+
+        details = kwargs["details"]
+
+        assert "token_expires_at" in details
+        assert "token_rotated_at" in details
+        assert "agent_token" not in details
+        assert "token_hash" not in details
+
+        db.commit.assert_called_once()
     finally:
         app.dependency_overrides.clear()

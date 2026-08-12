@@ -304,6 +304,30 @@ def commit_own_agent_token_rotation(
             and agent.revoked_at is None
             and agent.token_rotated_at is not None
         ):
+            append_audit(
+                db,
+                action="agent.token.rotate.commit.recovered",
+                actor_id=str(agent.id),
+                workspace_id=agent.workspace_id,
+                request_id=getattr(
+                    request.state,
+                    "request_id",
+                    None,
+                ),
+                target_type="agent",
+                target_id=str(agent.id),
+                details={
+                    "token_expires_at": (
+                        agent.token_expires_at.isoformat()
+                    ),
+                    "token_rotated_at": (
+                        agent.token_rotated_at.isoformat()
+                    ),
+                },
+            )
+
+            db.commit()
+
             return AgentTokenRotateCommitResponse(
                 agent_id=agent.id,
                 agent_token_expires_at=(
@@ -346,9 +370,32 @@ def commit_own_agent_token_rotation(
         + AGENT_TOKEN_ROTATION_PREPARE_TTL
         <= now
     ):
+        expired_prepared_at = prepared_at
+
         agent.pending_token_hash = None
         agent.pending_token_expires_at = None
         agent.token_rotation_prepared_at = None
+
+        append_audit(
+            db,
+            action="agent.token.rotate.prepare.expired",
+            actor_id=str(agent.id),
+            workspace_id=agent.workspace_id,
+            request_id=getattr(
+                request.state,
+                "request_id",
+                None,
+            ),
+            target_type="agent",
+            target_id=str(agent.id),
+            details={
+                "token_rotation_prepared_at": (
+                    expired_prepared_at.isoformat()
+                ),
+                "expired_at": now.isoformat(),
+            },
+        )
+
         db.commit()
 
         raise HTTPException(
@@ -398,82 +445,6 @@ def commit_own_agent_token_rotation(
 
 
 @router.post(
-    "/token/rotate-self",
-    response_model=AgentTokenRotateResponse,
-)
-def rotate_own_agent_token(
-    request: Request,
-    authorization: str | None = Header(
-        default=None,
-        alias="Authorization",
-    ),
-    db: Session = Depends(get_db),
-):
-    raw_current_token = _extract_bearer_token(
-        authorization,
-    )
-    current_token_hash = _hash_token(
-        raw_current_token,
-    )
-
-    agent = db.scalar(
-        select(Agent)
-        .where(
-            Agent.token_hash == current_token_hash,
-        )
-        .with_for_update()
-    )
-
-    now = datetime.now(UTC)
-
-    if agent is None or agent.revoked_at is not None:
-        raise HTTPException(
-            status_code=401,
-            detail="invalid_agent_token",
-        )
-
-    if agent.token_expires_at <= now:
-        raise HTTPException(
-            status_code=401,
-            detail="expired_agent_token",
-        )
-
-    raw_token, token_hash = _new_token("agent")
-
-    agent.token_hash = token_hash
-    agent.token_expires_at = now + AGENT_TOKEN_TTL
-    agent.token_rotated_at = now
-
-    append_audit(
-        db,
-        action="agent.token.rotate.self",
-        actor_id=str(agent.id),
-        workspace_id=agent.workspace_id,
-        request_id=getattr(
-            request.state,
-            "request_id",
-            None,
-        ),
-        target_type="agent",
-        target_id=str(agent.id),
-        details={
-            "token_expires_at":
-                agent.token_expires_at.isoformat(),
-        },
-    )
-
-    db.commit()
-
-    return AgentTokenRotateResponse(
-        agent_id=agent.id,
-        agent_token=raw_token,
-        agent_token_expires_at=agent.token_expires_at,
-        token_rotated_at=agent.token_rotated_at,
-    )
-
-
-
-@router.post(
     "/{agent_id}/token/rotate",
     response_model=AgentTokenRotateResponse,
 )
@@ -508,6 +479,20 @@ def rotate_agent_token(
         )
 
     now = datetime.now(UTC)
+
+    pending_rotation_invalidated = any(
+        value is not None
+        for value in (
+            agent.pending_token_hash,
+            agent.pending_token_expires_at,
+            agent.token_rotation_prepared_at,
+        )
+    )
+
+    agent.pending_token_hash = None
+    agent.pending_token_expires_at = None
+    agent.token_rotation_prepared_at = None
+
     raw_token, token_hash = _new_token("agent")
 
     agent.token_hash = token_hash
@@ -525,6 +510,9 @@ def rotate_agent_token(
         target_id=str(agent.id),
         details={
             "token_expires_at": agent.token_expires_at.isoformat(),
+            "pending_rotation_invalidated": (
+                pending_rotation_invalidated
+            ),
         },
     )
 
@@ -569,6 +557,19 @@ def revoke_agent(
     if agent.revoked_at is None:
         now = datetime.now(UTC)
 
+        pending_rotation_invalidated = any(
+            value is not None
+            for value in (
+                agent.pending_token_hash,
+                agent.pending_token_expires_at,
+                agent.token_rotation_prepared_at,
+            )
+        )
+
+        agent.pending_token_hash = None
+        agent.pending_token_expires_at = None
+        agent.token_rotation_prepared_at = None
+
         agent.revoked_at = now
         agent.status = "revoked"
 
@@ -587,6 +588,9 @@ def revoke_agent(
             target_id=str(agent.id),
             details={
                 "resource_id": str(agent.resource_id),
+                "pending_rotation_invalidated": (
+                    pending_rotation_invalidated
+                ),
             },
         )
 

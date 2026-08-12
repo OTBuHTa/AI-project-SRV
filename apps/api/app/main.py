@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.middleware.request_context import RequestContextMiddleware
 from app.db.session import SessionLocal
 from app.services.agent_status import evaluate_agent_statuses
+from app.services.agent_token_lifecycle import cleanup_expired_pending_rotations
 from app.api.v1.backups import router as backups_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.inventory import router as inventory_router
@@ -28,6 +29,7 @@ async def _status_loop():
         try:
             with SessionLocal() as db:
                 evaluate_agent_statuses(db)
+                cleanup_expired_pending_rotations(db)
         except Exception:
             pass
         await asyncio.sleep(30)
@@ -44,7 +46,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-app = FastAPI(title=settings.app_name, version="0.1.18-alpha", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.1.19-alpha", lifespan=lifespan)
 app.add_middleware(RequestContextMiddleware)
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -65,6 +67,6 @@ app.include_router(inventory_router)
 def api_root():
     return {
         "name": settings.app_name,
-        "version": "0.1.18-alpha",
+        "version": "0.1.19-alpha",
         "phase": "Infrastructure Inventory + Lifecycle",
     }
