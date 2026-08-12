@@ -17,6 +17,12 @@ For development, omit `--once` to send heartbeats every 30 seconds.
 
 The state file contains the agent credential and should be readable only by the service account.
 
+## Reliability and secure state (v0.1.17-alpha)
+
+Heartbeat, inventory submission, task polling, and task-result submission retry temporary transport failures, rate limits, and server errors with exponential backoff and jitter. After retries are exhausted, the daemon logs the failure, continues the remaining operations, and tries again during the next cycle instead of exiting.
+
+Enrollment state is written atomically in the state file's directory, flushed to disk, and replaced only after the complete JSON document is durable. The agent restricts the state file to mode `0600` where the operating system supports POSIX permissions and validates required credentials when loading it.
+
 
 ## Controlled write capability (v0.1.4-alpha)
 
