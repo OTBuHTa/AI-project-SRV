@@ -322,9 +322,12 @@ def poll_and_execute_task(state: dict) -> None:
 
 def run_cycle(
     state: dict,
-    state_file: Path,
+    state_file: Path | None = None,
 ) -> None:
-    if token_needs_rotation(state):
+    if (
+        state_file is not None
+        and token_needs_rotation(state)
+    ):
         try:
             rotate_agent_token(
                 state,
