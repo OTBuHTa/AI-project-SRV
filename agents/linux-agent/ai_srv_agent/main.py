@@ -13,6 +13,8 @@ import psutil
 
 from ai_srv_agent import __version__
 from ai_srv_agent.credentials import (
+    has_pending_agent_token,
+    recover_pending_agent_token,
     rotate_agent_token,
     token_needs_rotation,
 )
@@ -324,15 +326,18 @@ def run_cycle(
     state: dict,
     state_file: Path | None = None,
 ) -> None:
-    if (
-        state_file is not None
-        and token_needs_rotation(state)
-    ):
+    if state_file is not None:
         try:
-            rotate_agent_token(
-                state,
-                state_file,
-            )
+            if has_pending_agent_token(state):
+                recover_pending_agent_token(
+                    state,
+                    state_file,
+                )
+            elif token_needs_rotation(state):
+                rotate_agent_token(
+                    state,
+                    state_file,
+                )
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             LOGGER.warning(
                 "token rotation failed; "
