@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -23,15 +24,26 @@ from app.api.v1.notifications import router as notifications_router
 from app.api.v1.inventory import router as inventory_router
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+
+def _run_agent_lifecycle_iteration() -> None:
+    try:
+        with SessionLocal() as db:
+            evaluate_agent_statuses(db)
+    except Exception:
+        logger.exception("agent status evaluation failed")
+
+    try:
+        with SessionLocal() as db:
+            cleanup_expired_pending_rotations(db)
+    except Exception:
+        logger.exception("agent token lifecycle cleanup failed")
+
 
 async def _status_loop():
     while True:
-        try:
-            with SessionLocal() as db:
-                evaluate_agent_statuses(db)
-                cleanup_expired_pending_rotations(db)
-        except Exception:
-            pass
+        _run_agent_lifecycle_iteration()
         await asyncio.sleep(30)
 
 @asynccontextmanager
