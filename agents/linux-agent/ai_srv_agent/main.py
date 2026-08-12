@@ -12,6 +12,10 @@ import httpx
 import psutil
 
 from ai_srv_agent import __version__
+from ai_srv_agent.credentials import (
+    rotate_agent_token,
+    token_needs_rotation,
+)
 from ai_srv_agent.reliability import retry_http
 from ai_srv_agent.state import load_state, save_state
 
@@ -316,17 +320,38 @@ def poll_and_execute_task(state: dict) -> None:
     retry_http(submit_result)
 
 
-def run_cycle(state: dict) -> None:
+def run_cycle(
+    state: dict,
+    state_file: Path,
+) -> None:
+    if token_needs_rotation(state):
+        try:
+            rotate_agent_token(
+                state,
+                state_file,
+            )
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
+            LOGGER.warning(
+                "token rotation failed; "
+                "agent will retry next cycle: %s",
+                exc,
+            )
+
     operations = (
         ("heartbeat", heartbeat),
         ("inventory", submit_inventory),
         ("task polling", poll_and_execute_task),
     )
+
     for name, operation in operations:
         try:
             operation(state)
         except (httpx.HTTPError, ValueError, KeyError) as exc:
-            LOGGER.warning("%s failed; agent will retry next cycle: %s", name, exc)
+            LOGGER.warning(
+                "%s failed; agent will retry next cycle: %s",
+                name,
+                exc,
+            )
 
 
 def main() -> None:
@@ -349,7 +374,10 @@ def main() -> None:
         raise SystemExit("Enrollment token required for first start")
 
     while True:
-        run_cycle(state)
+        run_cycle(
+            state,
+            state_file,
+        )
         if args.once:
             return
         time.sleep(int(state.get("heartbeat_interval_seconds", 30)))
