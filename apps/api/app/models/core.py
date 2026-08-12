@@ -244,6 +244,20 @@ class Agent(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    pending_token_hash: Mapped[str | None] = mapped_column(
+        String(128),
+        unique=True,
+        index=True,
+        nullable=True,
+    )
+    pending_token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    token_rotation_prepared_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     capabilities: Mapped[list] = mapped_column(JSONB, default=list)
     last_metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
