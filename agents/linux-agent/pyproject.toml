@@ -1,6 +1,6 @@
 [project]
 name = "ai-project-srv-linux-agent"
-version = "0.1.18a0"
+version = "0.1.19a0"
 requires-python = ">=3.11"
 dependencies = [
   "httpx>=0.28,<1",
