@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -23,15 +24,26 @@ from app.api.v1.notifications import router as notifications_router
 from app.api.v1.inventory import router as inventory_router
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+
+def _run_agent_lifecycle_iteration() -> None:
+    try:
+        with SessionLocal() as db:
+            evaluate_agent_statuses(db)
+    except Exception:
+        logger.exception("agent status evaluation failed")
+
+    try:
+        with SessionLocal() as db:
+            cleanup_expired_pending_rotations(db)
+    except Exception:
+        logger.exception("agent token lifecycle cleanup failed")
+
 
 async def _status_loop():
     while True:
-        try:
-            with SessionLocal() as db:
-                evaluate_agent_statuses(db)
-                cleanup_expired_pending_rotations(db)
-        except Exception:
-            pass
+        _run_agent_lifecycle_iteration()
         await asyncio.sleep(30)
 
 @asynccontextmanager
@@ -46,7 +58,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-app = FastAPI(title=settings.app_name, version="0.1.19-alpha", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.1.20-alpha", lifespan=lifespan)
 app.add_middleware(RequestContextMiddleware)
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -67,6 +79,6 @@ app.include_router(inventory_router)
 def api_root():
     return {
         "name": settings.app_name,
-        "version": "0.1.19-alpha",
+        "version": "0.1.20-alpha",
         "phase": "Infrastructure Inventory + Lifecycle",
     }
