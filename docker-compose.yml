@@ -80,6 +80,23 @@ services:
       redis:
         condition: service_healthy
 
+
+  agent-lifecycle-alert-delivery:
+    build:
+      context: ./apps/api
+    command:
+      - python
+      - -m
+      - app.services.agent_lifecycle_alert_delivery_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   backup-verifier:
     image: postgres:16-alpine
     profiles: ["tools"]
