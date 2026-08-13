@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
 from app.services.agent_lifecycle_monitor import (
@@ -8,6 +9,7 @@ from app.services.agent_lifecycle_monitor import (
 
 def test_workspace_monitor_runs_diagnostics_evaluation_and_sync():
     db = MagicMock()
+    db.scalars.return_value.all.return_value = []
 
     diagnostics = {
         "expired_pending_rotations": 1,
@@ -34,6 +36,11 @@ def test_workspace_monitor_runs_diagnostics_evaluation_and_sync():
             "sync_agent_lifecycle_alert_events",
             return_value=events,
         ) as sync_events,
+        patch(
+            "app.services.agent_lifecycle_monitor."
+            "find_matching_destinations",
+            return_value=[],
+        ),
     ):
         result = sync_workspace_agent_lifecycle_alerts(
             db,
@@ -54,6 +61,114 @@ def test_workspace_monitor_runs_diagnostics_evaluation_and_sync():
         workspace_id="workspace-1",
         alerts=alerts,
     )
+
+
+def test_new_lifecycle_event_is_routed_and_enqueued():
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+
+    event = SimpleNamespace(
+        id="event-1",
+        workspace_id="workspace-1",
+        code="agent_token_rotation_expired",
+        severity="warning",
+    )
+
+    destination = SimpleNamespace(
+        id="destination-1",
+        channel="webhook",
+    )
+
+    with (
+        patch(
+            "app.services.agent_lifecycle_monitor."
+            "get_agent_token_lifecycle_diagnostics",
+            return_value={},
+        ),
+        patch(
+            "app.services.agent_lifecycle_monitor."
+            "evaluate_agent_lifecycle_alerts",
+            return_value=[],
+        ),
+        patch(
+            "app.services.agent_lifecycle_monitor."
+            "sync_agent_lifecycle_alert_events",
+            return_value=[event],
+        ),
+        patch(
+            "app.services.agent_lifecycle_monitor."
+            "find_matching_destinations",
+            return_value=[destination],
+        ) as find_destinations,
+        patch(
+            "app.services.agent_lifecycle_monitor."
+            "enqueue_agent_lifecycle_alert_delivery",
+        ) as enqueue_delivery,
+    ):
+        sync_workspace_agent_lifecycle_alerts(
+            db,
+            workspace_id="workspace-1",
+        )
+
+    find_destinations.assert_called_once_with(
+        db,
+        event=event,
+    )
+
+    enqueue_delivery.assert_called_once_with(
+        db,
+        workspace_id="workspace-1",
+        alert_event_id="event-1",
+        channel="webhook",
+        destination_id="destination-1",
+    )
+
+
+def test_existing_active_lifecycle_event_is_not_reenqueued():
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [
+        "agent_token_rotation_expired"
+    ]
+
+    event = SimpleNamespace(
+        id="event-1",
+        workspace_id="workspace-1",
+        code="agent_token_rotation_expired",
+        severity="warning",
+    )
+
+    with (
+        patch(
+            "app.services.agent_lifecycle_monitor."
+            "get_agent_token_lifecycle_diagnostics",
+            return_value={},
+        ),
+        patch(
+            "app.services.agent_lifecycle_monitor."
+            "evaluate_agent_lifecycle_alerts",
+            return_value=[],
+        ),
+        patch(
+            "app.services.agent_lifecycle_monitor."
+            "sync_agent_lifecycle_alert_events",
+            return_value=[event],
+        ),
+        patch(
+            "app.services.agent_lifecycle_monitor."
+            "find_matching_destinations",
+        ) as find_destinations,
+        patch(
+            "app.services.agent_lifecycle_monitor."
+            "enqueue_agent_lifecycle_alert_delivery",
+        ) as enqueue_delivery,
+    ):
+        sync_workspace_agent_lifecycle_alerts(
+            db,
+            workspace_id="workspace-1",
+        )
+
+    find_destinations.assert_not_called()
+    enqueue_delivery.assert_not_called()
 
 
 def test_monitor_includes_agent_and_active_alert_workspaces():
