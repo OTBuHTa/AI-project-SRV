@@ -19,6 +19,7 @@ from app.middleware.request_context import RequestContextMiddleware
 from app.db.session import SessionLocal
 from app.services.agent_status import evaluate_agent_statuses
 from app.services.agent_token_lifecycle import cleanup_expired_pending_rotations
+from app.services.agent_lifecycle_monitor import sync_all_agent_lifecycle_alerts
 from app.api.v1.backups import router as backups_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.inventory import router as inventory_router
@@ -39,6 +40,14 @@ def _run_agent_lifecycle_iteration() -> None:
             cleanup_expired_pending_rotations(db)
     except Exception:
         logger.exception("agent token lifecycle cleanup failed")
+
+    try:
+        with SessionLocal() as db:
+            sync_all_agent_lifecycle_alerts(db)
+    except Exception:
+        logger.exception(
+            "agent lifecycle alert monitor failed"
+        )
 
 
 async def _status_loop():
