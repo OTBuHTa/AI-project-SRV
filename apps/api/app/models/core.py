@@ -699,6 +699,112 @@ class NotificationRoute(Base):
     )
 
 
+
+class AgentLifecycleAlertDelivery(Base):
+    __tablename__ = "agent_lifecycle_alert_deliveries"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(36),
+        nullable=False,
+        index=True,
+    )
+
+    alert_event_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "agent_lifecycle_alert_events.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    channel: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+    )
+
+    destination_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey(
+            "notification_destinations.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        index=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="pending",
+        index=True,
+    )
+
+    attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    max_attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=5,
+    )
+
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    last_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "alert_event_id",
+            "destination_id",
+            name=(
+                "uq_agent_lifecycle_delivery_"
+                "event_destination"
+            ),
+        ),
+    )
+
+
 class BackupAlertDelivery(Base):
     __tablename__ = "backup_alert_deliveries"
 
