@@ -5,10 +5,11 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_permission
 from app.core.security import decode_access_token
 from app.db.session import SessionLocal, get_db
-from app.models.core import Membership
+from app.models.core import AgentLifecycleAlertEvent, Membership
 from app.services.realtime import hub
 from app.services.agent_status import OFFLINE_AFTER_SECONDS, evaluate_agent_statuses
 from app.services.agent_token_diagnostics import get_agent_token_lifecycle_diagnostics
+from app.schemas.agent_lifecycle_alert_events import AgentLifecycleAlertEventOut
 
 router=APIRouter(prefix="/api/v1/monitoring", tags=["monitoring"])
 
@@ -28,6 +29,52 @@ def agent_token_lifecycle_diagnostics(
         db,
         workspace.id,
     )
+
+
+@router.get(
+    "/agent-lifecycle-alert-events",
+    response_model=list[AgentLifecycleAlertEventOut],
+)
+def list_agent_lifecycle_alert_events(
+    context=Depends(require_permission("agent.read")),
+    db: Session=Depends(get_db),
+):
+    workspace, _ = context
+
+    return db.scalars(
+        select(AgentLifecycleAlertEvent)
+        .where(
+            AgentLifecycleAlertEvent.workspace_id
+            == str(workspace.id)
+        )
+        .order_by(
+            AgentLifecycleAlertEvent.last_seen_at.desc()
+        )
+        .limit(200)
+    ).all()
+
+
+@router.get(
+    "/agent-lifecycle-alert-events/active",
+    response_model=list[AgentLifecycleAlertEventOut],
+)
+def list_active_agent_lifecycle_alert_events(
+    context=Depends(require_permission("agent.read")),
+    db: Session=Depends(get_db),
+):
+    workspace, _ = context
+
+    return db.scalars(
+        select(AgentLifecycleAlertEvent)
+        .where(
+            AgentLifecycleAlertEvent.workspace_id
+            == str(workspace.id),
+            AgentLifecycleAlertEvent.active.is_(True),
+        )
+        .order_by(
+            AgentLifecycleAlertEvent.last_seen_at.desc()
+        )
+    ).all()
 
 
 @router.websocket("/ws/{workspace_id}")

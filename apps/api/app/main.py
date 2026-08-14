@@ -19,6 +19,7 @@ from app.middleware.request_context import RequestContextMiddleware
 from app.db.session import SessionLocal
 from app.services.agent_status import evaluate_agent_statuses
 from app.services.agent_token_lifecycle import cleanup_expired_pending_rotations
+from app.services.agent_lifecycle_monitor import sync_all_agent_lifecycle_alerts
 from app.api.v1.backups import router as backups_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.inventory import router as inventory_router
@@ -33,6 +34,14 @@ def _run_agent_lifecycle_iteration() -> None:
             evaluate_agent_statuses(db)
     except Exception:
         logger.exception("agent status evaluation failed")
+
+    try:
+        with SessionLocal() as db:
+            sync_all_agent_lifecycle_alerts(db)
+    except Exception:
+        logger.exception(
+            "agent lifecycle alert monitor failed"
+        )
 
     try:
         with SessionLocal() as db:
@@ -58,7 +67,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-app = FastAPI(title=settings.app_name, version="0.1.20-alpha", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.1.21-alpha", lifespan=lifespan)
 app.add_middleware(RequestContextMiddleware)
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -79,6 +88,6 @@ app.include_router(inventory_router)
 def api_root():
     return {
         "name": settings.app_name,
-        "version": "0.1.20-alpha",
+        "version": "0.1.21-alpha",
         "phase": "Infrastructure Inventory + Lifecycle",
     }
