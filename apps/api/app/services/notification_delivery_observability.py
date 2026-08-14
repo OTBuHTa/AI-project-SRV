@@ -99,24 +99,6 @@ def list_notification_deliveries(
             .limit(limit)
         )
 
-        statement = (
-            statement
-            .order_by(
-                AgentLifecycleAlertDelivery.created_at.desc(),
-                AgentLifecycleAlertDelivery.id.desc(),
-            )
-            .limit(limit)
-        )
-
-        statement = (
-            statement
-            .order_by(
-                BackupAlertDelivery.created_at.desc(),
-                BackupAlertDelivery.id.desc(),
-            )
-            .limit(limit)
-        )
-
         deliveries = db.scalars(statement).all()
 
         records.extend(

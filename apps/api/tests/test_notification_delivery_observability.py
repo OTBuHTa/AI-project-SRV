@@ -732,3 +732,23 @@ def test_problem_view_applies_global_limit():
     assert [item.id for item in result] == [
         "lifecycle-failed"
     ]
+
+
+def test_backup_delivery_query_does_not_reference_lifecycle_table():
+    db = MagicMock()
+    db.scalars.return_value = scalar_result([])
+
+    list_notification_deliveries(
+        db,
+        workspace_id="workspace-1",
+        source=SOURCE_BACKUP,
+        limit=25,
+    )
+
+    assert db.scalars.call_count == 1
+
+    statement = db.scalars.call_args.args[0]
+    sql = str(statement.compile())
+
+    assert "backup_alert_deliveries" in sql
+    assert "agent_lifecycle_alert_deliveries" not in sql
