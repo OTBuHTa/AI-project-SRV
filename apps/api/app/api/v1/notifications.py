@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -23,6 +23,7 @@ from app.schemas.notifications import (
     NotificationRouteCreate,
     NotificationRouteOut,
     NotificationRouteUpdate,
+    NotificationDeliveryOut,
 )
 
 
@@ -30,6 +31,52 @@ router = APIRouter(
     prefix="/api/v1/notifications",
     tags=["notifications"],
 )
+
+
+@router.get(
+    "/deliveries",
+    response_model=list[NotificationDeliveryOut],
+)
+def list_deliveries(
+    source: str | None = Query(default=None),
+    delivery_status: str | None = Query(
+        default=None,
+        alias="status",
+    ),
+    limit: int = Query(default=100, ge=1, le=200),
+    context=Depends(require_permission("workspace.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services.notification_delivery_observability import (
+        VALID_SOURCES,
+        VALID_STATUSES,
+        list_notification_deliveries,
+    )
+
+    if source is not None and source not in VALID_SOURCES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_source",
+        )
+
+    if (
+        delivery_status is not None
+        and delivery_status not in VALID_STATUSES
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_status",
+        )
+
+    workspace, _membership = context
+
+    return list_notification_deliveries(
+        db,
+        workspace_id=str(workspace.id),
+        source=source,
+        status=delivery_status,
+        limit=limit,
+    )
 
 settings = get_settings()
 

@@ -57,3 +57,21 @@ class NotificationRouteOut(BaseModel):
     model_config = {
         "from_attributes": True,
     }
+
+
+class NotificationDeliveryOut(BaseModel):
+    id: str
+    source: str
+    workspace_id: str
+    alert_event_id: str
+    channel: str
+    destination_id: str | None
+    status: str
+    attempts: int
+    max_attempts: int
+    next_attempt_at: datetime | None
+    last_attempt_at: datetime | None
+    delivered_at: datetime | None
+    last_error: str | None
+    created_at: datetime
+    updated_at: datetime
