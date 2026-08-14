@@ -233,3 +233,278 @@ def test_global_limit_is_applied_after_sources_are_merged():
         statement = call.args[0]
         params = statement.compile().params
         assert 2 in params.values()
+
+
+def health_row(
+    *,
+    total=0,
+    pending=0,
+    sending=0,
+    delivered=0,
+    failed=0,
+    canceled=0,
+    retryable_failed=0,
+    exhausted_failed=0,
+    stale_sending=0,
+):
+    return SimpleNamespace(
+        total=total,
+        pending=pending,
+        sending=sending,
+        delivered=delivered,
+        failed=failed,
+        canceled=canceled,
+        retryable_failed=retryable_failed,
+        exhausted_failed=exhausted_failed,
+        stale_sending=stale_sending,
+    )
+
+
+def execute_result(row):
+    result = MagicMock()
+    result.one.return_value = row
+    return result
+
+
+def test_delivery_health_is_healthy_without_failures():
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_health,
+    )
+
+    db = MagicMock()
+
+    db.execute.side_effect = [
+        execute_result(
+            health_row(
+                total=3,
+                pending=1,
+                sending=1,
+                delivered=1,
+            )
+        ),
+        execute_result(
+            health_row(
+                total=2,
+                delivered=2,
+            )
+        ),
+    ]
+
+    result = get_notification_delivery_health(
+        db,
+        workspace_id="workspace-1",
+        now=NOW,
+    )
+
+    assert result.status == "healthy"
+    assert result.issues == []
+    assert result.observed_at == NOW
+    assert result.claim_timeout_seconds == 300
+
+    assert result.total.total == 5
+    assert result.total.pending == 1
+    assert result.total.sending == 1
+    assert result.total.delivered == 3
+
+    assert result.backup.total == 3
+    assert result.agent_lifecycle.total == 2
+
+
+def test_retryable_failure_degrades_delivery_health():
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_health,
+    )
+
+    db = MagicMock()
+
+    db.execute.side_effect = [
+        execute_result(
+            health_row(
+                total=1,
+                failed=1,
+                retryable_failed=1,
+            )
+        ),
+        execute_result(health_row()),
+    ]
+
+    result = get_notification_delivery_health(
+        db,
+        workspace_id="workspace-1",
+        now=NOW,
+    )
+
+    assert result.status == "degraded"
+    assert result.issues == [
+        "notification_delivery_retryable_failure"
+    ]
+
+    assert result.total.failed == 1
+    assert result.total.retryable_failed == 1
+    assert result.total.exhausted_failed == 0
+
+
+def test_exhausted_failure_degrades_delivery_health():
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_health,
+    )
+
+    db = MagicMock()
+
+    db.execute.side_effect = [
+        execute_result(health_row()),
+        execute_result(
+            health_row(
+                total=1,
+                failed=1,
+                exhausted_failed=1,
+            )
+        ),
+    ]
+
+    result = get_notification_delivery_health(
+        db,
+        workspace_id="workspace-1",
+        now=NOW,
+    )
+
+    assert result.status == "degraded"
+    assert result.issues == [
+        "notification_delivery_retries_exhausted"
+    ]
+
+    assert result.total.failed == 1
+    assert result.total.exhausted_failed == 1
+
+
+def test_stale_sending_degrades_delivery_health():
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_health,
+    )
+
+    db = MagicMock()
+
+    db.execute.side_effect = [
+        execute_result(
+            health_row(
+                total=1,
+                sending=1,
+                stale_sending=1,
+            )
+        ),
+        execute_result(health_row()),
+    ]
+
+    result = get_notification_delivery_health(
+        db,
+        workspace_id="workspace-1",
+        now=NOW,
+    )
+
+    assert result.status == "degraded"
+    assert result.issues == [
+        "notification_delivery_stale_sending"
+    ]
+
+    assert result.total.sending == 1
+    assert result.total.stale_sending == 1
+
+
+def test_delivery_health_aggregates_all_issue_types():
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_health,
+    )
+
+    db = MagicMock()
+
+    db.execute.side_effect = [
+        execute_result(
+            health_row(
+                total=2,
+                failed=2,
+                retryable_failed=1,
+                exhausted_failed=1,
+            )
+        ),
+        execute_result(
+            health_row(
+                total=1,
+                sending=1,
+                stale_sending=1,
+            )
+        ),
+    ]
+
+    result = get_notification_delivery_health(
+        db,
+        workspace_id="workspace-1",
+        now=NOW,
+    )
+
+    assert result.status == "degraded"
+
+    assert result.issues == [
+        "notification_delivery_retryable_failure",
+        "notification_delivery_retries_exhausted",
+        "notification_delivery_stale_sending",
+    ]
+
+    assert result.total.total == 3
+    assert result.total.failed == 2
+    assert result.total.retryable_failed == 1
+    assert result.total.exhausted_failed == 1
+    assert result.total.stale_sending == 1
+
+
+def test_delivery_health_queries_are_workspace_scoped():
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_health,
+    )
+
+    db = MagicMock()
+
+    db.execute.side_effect = [
+        execute_result(health_row()),
+        execute_result(health_row()),
+    ]
+
+    get_notification_delivery_health(
+        db,
+        workspace_id="workspace-secret",
+        now=NOW,
+    )
+
+    assert db.execute.call_count == 2
+
+    for call in db.execute.call_args_list:
+        statement = call.args[0]
+        params = statement.compile().params
+
+        assert "workspace-secret" in params.values()
+
+
+def test_delivery_health_uses_claim_timeout_cutoff():
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_health,
+    )
+
+    db = MagicMock()
+
+    db.execute.side_effect = [
+        execute_result(health_row()),
+        execute_result(health_row()),
+    ]
+
+    get_notification_delivery_health(
+        db,
+        workspace_id="workspace-1",
+        now=NOW,
+    )
+
+    expected_cutoff = NOW - timedelta(seconds=300)
+
+    for call in db.execute.call_args_list:
+        statement = call.args[0]
+        params = statement.compile().params
+
+        assert expected_cutoff in params.values()

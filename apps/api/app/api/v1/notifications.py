@@ -24,6 +24,7 @@ from app.schemas.notifications import (
     NotificationRouteOut,
     NotificationRouteUpdate,
     NotificationDeliveryOut,
+    NotificationDeliveryHealthOut,
 )
 
 
@@ -31,6 +32,26 @@ router = APIRouter(
     prefix="/api/v1/notifications",
     tags=["notifications"],
 )
+
+
+@router.get(
+    "/deliveries/health",
+    response_model=NotificationDeliveryHealthOut,
+)
+def get_delivery_health(
+    context=Depends(require_permission("workspace.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_health,
+    )
+
+    workspace, _membership = context
+
+    return get_notification_delivery_health(
+        db,
+        workspace_id=str(workspace.id),
+    )
 
 
 @router.get(

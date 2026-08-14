@@ -75,3 +75,25 @@ class NotificationDeliveryOut(BaseModel):
     last_error: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class NotificationDeliveryHealthCounts(BaseModel):
+    total: int
+    pending: int
+    sending: int
+    delivered: int
+    failed: int
+    canceled: int
+    retryable_failed: int
+    exhausted_failed: int
+    stale_sending: int
+
+
+class NotificationDeliveryHealthOut(BaseModel):
+    status: str
+    issues: list[str]
+    observed_at: datetime
+    claim_timeout_seconds: int
+    total: NotificationDeliveryHealthCounts
+    backup: NotificationDeliveryHealthCounts
+    agent_lifecycle: NotificationDeliveryHealthCounts

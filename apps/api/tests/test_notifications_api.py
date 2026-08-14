@@ -248,3 +248,27 @@ def test_list_deliveries_uses_current_workspace():
         status="failed",
         limit=25,
     )
+
+
+def test_get_delivery_health_uses_current_workspace():
+    from app.api.v1.notifications import get_delivery_health
+
+    db = MagicMock()
+    expected = SimpleNamespace(status="healthy")
+
+    with patch(
+        "app.services.notification_delivery_observability."
+        "get_notification_delivery_health",
+        return_value=expected,
+    ) as health_service:
+        result = get_delivery_health(
+            context=context("workspace-1"),
+            db=db,
+        )
+
+    assert result is expected
+
+    health_service.assert_called_once_with(
+        db,
+        workspace_id="workspace-1",
+    )

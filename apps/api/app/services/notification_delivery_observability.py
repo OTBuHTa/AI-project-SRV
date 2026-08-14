@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.models.core import (
@@ -168,3 +168,188 @@ def list_notification_deliveries(
     )
 
     return records[:limit]
+
+
+
+CLAIM_TIMEOUT_SECONDS = 300
+
+
+@dataclass(frozen=True)
+class NotificationDeliveryHealthCounts:
+    total: int
+    pending: int
+    sending: int
+    delivered: int
+    failed: int
+    canceled: int
+    retryable_failed: int
+    exhausted_failed: int
+    stale_sending: int
+
+
+@dataclass(frozen=True)
+class NotificationDeliveryHealth:
+    status: str
+    issues: list[str]
+    observed_at: datetime
+    claim_timeout_seconds: int
+    total: NotificationDeliveryHealthCounts
+    backup: NotificationDeliveryHealthCounts
+    agent_lifecycle: NotificationDeliveryHealthCounts
+
+
+def _delivery_health_counts(
+    db: Session,
+    *,
+    model,
+    workspace_id: str,
+    stale_before: datetime,
+) -> NotificationDeliveryHealthCounts:
+    row = db.execute(
+        select(
+            func.count(model.id).label("total"),
+            func.sum(
+                case((model.status == "pending", 1), else_=0)
+            ).label("pending"),
+            func.sum(
+                case((model.status == "sending", 1), else_=0)
+            ).label("sending"),
+            func.sum(
+                case((model.status == "delivered", 1), else_=0)
+            ).label("delivered"),
+            func.sum(
+                case((model.status == "failed", 1), else_=0)
+            ).label("failed"),
+            func.sum(
+                case((model.status == "canceled", 1), else_=0)
+            ).label("canceled"),
+            func.sum(
+                case(
+                    (
+                        (model.status == "failed")
+                        & (model.attempts < model.max_attempts),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("retryable_failed"),
+            func.sum(
+                case(
+                    (
+                        (model.status == "failed")
+                        & (model.attempts >= model.max_attempts),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("exhausted_failed"),
+            func.sum(
+                case(
+                    (
+                        (model.status == "sending")
+                        & (model.last_attempt_at <= stale_before),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("stale_sending"),
+        ).where(
+            model.workspace_id == workspace_id
+        )
+    ).one()
+
+    return NotificationDeliveryHealthCounts(
+        total=int(row.total or 0),
+        pending=int(row.pending or 0),
+        sending=int(row.sending or 0),
+        delivered=int(row.delivered or 0),
+        failed=int(row.failed or 0),
+        canceled=int(row.canceled or 0),
+        retryable_failed=int(row.retryable_failed or 0),
+        exhausted_failed=int(row.exhausted_failed or 0),
+        stale_sending=int(row.stale_sending or 0),
+    )
+
+
+def _sum_health_counts(
+    left: NotificationDeliveryHealthCounts,
+    right: NotificationDeliveryHealthCounts,
+) -> NotificationDeliveryHealthCounts:
+    return NotificationDeliveryHealthCounts(
+        total=left.total + right.total,
+        pending=left.pending + right.pending,
+        sending=left.sending + right.sending,
+        delivered=left.delivered + right.delivered,
+        failed=left.failed + right.failed,
+        canceled=left.canceled + right.canceled,
+        retryable_failed=(
+            left.retryable_failed
+            + right.retryable_failed
+        ),
+        exhausted_failed=(
+            left.exhausted_failed
+            + right.exhausted_failed
+        ),
+        stale_sending=(
+            left.stale_sending
+            + right.stale_sending
+        ),
+    )
+
+
+def get_notification_delivery_health(
+    db: Session,
+    *,
+    workspace_id: str,
+    now: datetime | None = None,
+) -> NotificationDeliveryHealth:
+    now = now or datetime.now(timezone.utc)
+    stale_before = now - timedelta(
+        seconds=CLAIM_TIMEOUT_SECONDS
+    )
+
+    backup = _delivery_health_counts(
+        db,
+        model=BackupAlertDelivery,
+        workspace_id=workspace_id,
+        stale_before=stale_before,
+    )
+
+    agent_lifecycle = _delivery_health_counts(
+        db,
+        model=AgentLifecycleAlertDelivery,
+        workspace_id=workspace_id,
+        stale_before=stale_before,
+    )
+
+    total = _sum_health_counts(
+        backup,
+        agent_lifecycle,
+    )
+
+    issues: list[str] = []
+
+    if total.retryable_failed:
+        issues.append(
+            "notification_delivery_retryable_failure"
+        )
+
+    if total.exhausted_failed:
+        issues.append(
+            "notification_delivery_retries_exhausted"
+        )
+
+    if total.stale_sending:
+        issues.append(
+            "notification_delivery_stale_sending"
+        )
+
+    return NotificationDeliveryHealth(
+        status="degraded" if issues else "healthy",
+        issues=issues,
+        observed_at=now,
+        claim_timeout_seconds=CLAIM_TIMEOUT_SECONDS,
+        total=total,
+        backup=backup,
+        agent_lifecycle=agent_lifecycle,
+    )
