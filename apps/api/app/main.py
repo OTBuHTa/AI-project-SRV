@@ -37,17 +37,17 @@ def _run_agent_lifecycle_iteration() -> None:
 
     try:
         with SessionLocal() as db:
-            cleanup_expired_pending_rotations(db)
-    except Exception:
-        logger.exception("agent token lifecycle cleanup failed")
-
-    try:
-        with SessionLocal() as db:
             sync_all_agent_lifecycle_alerts(db)
     except Exception:
         logger.exception(
             "agent lifecycle alert monitor failed"
         )
+
+    try:
+        with SessionLocal() as db:
+            cleanup_expired_pending_rotations(db)
+    except Exception:
+        logger.exception("agent token lifecycle cleanup failed")
 
 
 async def _status_loop():

@@ -45,8 +45,12 @@ If the condition later returns, a new historical event is created.
 Periodic lifecycle processing now independently performs:
 
 1. agent status evaluation;
-2. expired token rotation cleanup;
-3. lifecycle alert reconciliation.
+2. lifecycle alert reconciliation;
+3. expired token rotation cleanup.
+
+Alert reconciliation runs before cleanup so expired pending rotations can be
+persisted and routed as operational events before their pending state is
+removed.
 
 Each operation uses an independent database session and exception boundary.
 

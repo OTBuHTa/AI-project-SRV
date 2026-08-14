@@ -12,15 +12,15 @@ def _sessions():
 
 
 def test_status_failure_does_not_block_remaining_operations():
-    status_db, cleanup_db, alert_db = _sessions()
+    status_db, alert_db, cleanup_db = _sessions()
 
     with (
         patch(
             "app.main.SessionLocal",
             side_effect=[
                 status_db,
-                cleanup_db,
                 alert_db,
+                cleanup_db,
             ],
         ),
         patch(
@@ -54,16 +54,16 @@ def test_status_failure_does_not_block_remaining_operations():
     )
 
 
-def test_cleanup_failure_does_not_block_alert_monitor():
-    status_db, cleanup_db, alert_db = _sessions()
+def test_cleanup_failure_does_not_escape_iteration():
+    status_db, alert_db, cleanup_db = _sessions()
 
     with (
         patch(
             "app.main.SessionLocal",
             side_effect=[
                 status_db,
-                cleanup_db,
                 alert_db,
+                cleanup_db,
             ],
         ),
         patch(
@@ -92,15 +92,15 @@ def test_cleanup_failure_does_not_block_alert_monitor():
 
 
 def test_alert_monitor_failure_does_not_escape_iteration():
-    status_db, cleanup_db, alert_db = _sessions()
+    status_db, alert_db, cleanup_db = _sessions()
 
     with (
         patch(
             "app.main.SessionLocal",
             side_effect=[
                 status_db,
-                cleanup_db,
                 alert_db,
+                cleanup_db,
             ],
         ),
         patch(
@@ -125,15 +125,15 @@ def test_alert_monitor_failure_does_not_escape_iteration():
 
 
 def test_lifecycle_iteration_runs_all_operations():
-    status_db, cleanup_db, alert_db = _sessions()
+    status_db, alert_db, cleanup_db = _sessions()
 
     with (
         patch(
             "app.main.SessionLocal",
             side_effect=[
                 status_db,
-                cleanup_db,
                 alert_db,
+                cleanup_db,
             ],
         ),
         patch(
@@ -156,3 +156,44 @@ def test_lifecycle_iteration_runs_all_operations():
     sync_alerts.assert_called_once()
 
     log_exception.assert_not_called()
+
+
+def test_alert_reconciliation_runs_before_token_cleanup():
+    status_db, alert_db, cleanup_db = _sessions()
+    operations = []
+
+    with (
+        patch(
+            "app.main.SessionLocal",
+            side_effect=[
+                status_db,
+                alert_db,
+                cleanup_db,
+            ],
+        ),
+        patch(
+            "app.main.evaluate_agent_statuses",
+            side_effect=lambda _db: operations.append(
+                "status"
+            ),
+        ),
+        patch(
+            "app.main.sync_all_agent_lifecycle_alerts",
+            side_effect=lambda _db: operations.append(
+                "alerts"
+            ),
+        ),
+        patch(
+            "app.main.cleanup_expired_pending_rotations",
+            side_effect=lambda _db: operations.append(
+                "cleanup"
+            ),
+        ),
+    ):
+        _run_agent_lifecycle_iteration()
+
+    assert operations == [
+        "status",
+        "alerts",
+        "cleanup",
+    ]
