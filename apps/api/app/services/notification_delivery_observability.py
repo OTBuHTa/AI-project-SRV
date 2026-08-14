@@ -353,3 +353,118 @@ def get_notification_delivery_health(
         backup=backup,
         agent_lifecycle=agent_lifecycle,
     )
+
+
+
+@dataclass(frozen=True)
+class NotificationDeliveryProblemRecord(
+    NotificationDeliveryRecord
+):
+    problem: str
+
+
+def _problem_record(
+    delivery,
+    *,
+    source: str,
+    now: datetime,
+) -> NotificationDeliveryProblemRecord | None:
+    problem: str | None = None
+
+    if delivery.status == "failed":
+        if delivery.attempts >= delivery.max_attempts:
+            problem = "exhausted_failed"
+        else:
+            problem = "retryable_failed"
+
+    elif (
+        delivery.status == "sending"
+        and delivery.last_attempt_at is not None
+        and delivery.last_attempt_at
+        <= now - timedelta(seconds=CLAIM_TIMEOUT_SECONDS)
+    ):
+        problem = "stale_sending"
+
+    if problem is None:
+        return None
+
+    base = _record(
+        delivery,
+        source=source,
+    )
+
+    return NotificationDeliveryProblemRecord(
+        **base.__dict__,
+        problem=problem,
+    )
+
+
+def list_notification_delivery_problems(
+    db: Session,
+    *,
+    workspace_id: str,
+    source: str | None = None,
+    limit: int = 100,
+    now: datetime | None = None,
+) -> list[NotificationDeliveryProblemRecord]:
+    now = now or datetime.now(timezone.utc)
+    stale_before = now - timedelta(
+        seconds=CLAIM_TIMEOUT_SECONDS
+    )
+
+    records: list[NotificationDeliveryProblemRecord] = []
+
+    def load(model, source_name: str):
+        statement = (
+            select(model)
+            .where(
+                model.workspace_id == workspace_id,
+                (
+                    (
+                        model.status == "failed"
+                    )
+                    | (
+                        (model.status == "sending")
+                        & (model.last_attempt_at.is_not(None))
+                        & (model.last_attempt_at <= stale_before)
+                    )
+                ),
+            )
+            .order_by(
+                model.created_at.desc(),
+                model.id.desc(),
+            )
+            .limit(limit)
+        )
+
+        for delivery in db.scalars(statement).all():
+            record = _problem_record(
+                delivery,
+                source=source_name,
+                now=now,
+            )
+
+            if record is not None:
+                records.append(record)
+
+    if source in (None, SOURCE_BACKUP):
+        load(
+            BackupAlertDelivery,
+            SOURCE_BACKUP,
+        )
+
+    if source in (None, SOURCE_AGENT_LIFECYCLE):
+        load(
+            AgentLifecycleAlertDelivery,
+            SOURCE_AGENT_LIFECYCLE,
+        )
+
+    records.sort(
+        key=lambda item: (
+            item.created_at,
+            item.id,
+        ),
+        reverse=True,
+    )
+
+    return records[:limit]

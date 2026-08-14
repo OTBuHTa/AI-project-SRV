@@ -97,3 +97,7 @@ class NotificationDeliveryHealthOut(BaseModel):
     total: NotificationDeliveryHealthCounts
     backup: NotificationDeliveryHealthCounts
     agent_lifecycle: NotificationDeliveryHealthCounts
+
+
+class NotificationDeliveryProblemOut(NotificationDeliveryOut):
+    problem: str

@@ -272,3 +272,54 @@ def test_get_delivery_health_uses_current_workspace():
         db,
         workspace_id="workspace-1",
     )
+
+
+def test_list_delivery_problems_rejects_invalid_source():
+    from app.api.v1.notifications import (
+        list_delivery_problems,
+    )
+
+    db = MagicMock()
+
+    with pytest.raises(HTTPException) as exc:
+        list_delivery_problems(
+            source="unknown",
+            limit=100,
+            context=context(),
+            db=db,
+        )
+
+    assert exc.value.status_code == 400
+    assert (
+        exc.value.detail
+        == "invalid_notification_delivery_source"
+    )
+
+
+def test_list_delivery_problems_uses_current_workspace():
+    from app.api.v1.notifications import (
+        list_delivery_problems,
+    )
+
+    db = MagicMock()
+
+    with patch(
+        "app.services.notification_delivery_observability."
+        "list_notification_delivery_problems",
+        return_value=[],
+    ) as problem_service:
+        result = list_delivery_problems(
+            source="agent_lifecycle",
+            limit=25,
+            context=context("workspace-1"),
+            db=db,
+        )
+
+    assert result == []
+
+    problem_service.assert_called_once_with(
+        db,
+        workspace_id="workspace-1",
+        source="agent_lifecycle",
+        limit=25,
+    )

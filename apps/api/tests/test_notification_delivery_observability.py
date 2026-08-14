@@ -508,3 +508,227 @@ def test_delivery_health_uses_claim_timeout_cutoff():
         params = statement.compile().params
 
         assert expected_cutoff in params.values()
+
+
+def test_problem_view_classifies_retryable_failure():
+    from app.services.notification_delivery_observability import (
+        list_notification_delivery_problems,
+    )
+
+    db = MagicMock()
+
+    failed = delivery(
+        "failed-1",
+        status="failed",
+        created_at=NOW,
+    )
+    failed.attempts = 2
+    failed.max_attempts = 5
+
+    db.scalars.side_effect = [
+        scalar_result([failed]),
+        scalar_result([]),
+    ]
+
+    result = list_notification_delivery_problems(
+        db,
+        workspace_id="workspace-1",
+        now=NOW,
+    )
+
+    assert len(result) == 1
+    assert result[0].id == "failed-1"
+    assert result[0].problem == "retryable_failed"
+
+
+def test_problem_view_classifies_exhausted_failure():
+    from app.services.notification_delivery_observability import (
+        list_notification_delivery_problems,
+    )
+
+    db = MagicMock()
+
+    failed = delivery(
+        "failed-1",
+        status="failed",
+        created_at=NOW,
+    )
+    failed.attempts = 5
+    failed.max_attempts = 5
+
+    db.scalars.side_effect = [
+        scalar_result([]),
+        scalar_result([failed]),
+    ]
+
+    result = list_notification_delivery_problems(
+        db,
+        workspace_id="workspace-1",
+        now=NOW,
+    )
+
+    assert len(result) == 1
+    assert result[0].problem == "exhausted_failed"
+
+
+def test_problem_view_classifies_stale_sending():
+    from app.services.notification_delivery_observability import (
+        list_notification_delivery_problems,
+    )
+
+    db = MagicMock()
+
+    sending = delivery(
+        "sending-1",
+        status="sending",
+        created_at=NOW,
+    )
+    sending.last_attempt_at = (
+        NOW - timedelta(seconds=301)
+    )
+
+    db.scalars.side_effect = [
+        scalar_result([sending]),
+        scalar_result([]),
+    ]
+
+    result = list_notification_delivery_problems(
+        db,
+        workspace_id="workspace-1",
+        now=NOW,
+    )
+
+    assert len(result) == 1
+    assert result[0].problem == "stale_sending"
+
+
+def test_problem_view_excludes_normal_deliveries():
+    from app.services.notification_delivery_observability import (
+        list_notification_delivery_problems,
+    )
+
+    db = MagicMock()
+
+    pending = delivery(
+        "pending-1",
+        status="pending",
+        created_at=NOW,
+    )
+
+    sending = delivery(
+        "sending-1",
+        status="sending",
+        created_at=NOW,
+    )
+    sending.last_attempt_at = (
+        NOW - timedelta(seconds=60)
+    )
+
+    delivered = delivery(
+        "delivered-1",
+        status="delivered",
+        created_at=NOW,
+    )
+
+    db.scalars.side_effect = [
+        scalar_result(
+            [pending, sending, delivered]
+        ),
+        scalar_result([]),
+    ]
+
+    result = list_notification_delivery_problems(
+        db,
+        workspace_id="workspace-1",
+        now=NOW,
+    )
+
+    assert result == []
+
+
+def test_problem_view_source_filter_queries_one_source():
+    from app.services.notification_delivery_observability import (
+        SOURCE_BACKUP,
+        list_notification_delivery_problems,
+    )
+
+    db = MagicMock()
+
+    db.scalars.return_value = scalar_result([])
+
+    result = list_notification_delivery_problems(
+        db,
+        workspace_id="workspace-1",
+        source=SOURCE_BACKUP,
+        now=NOW,
+    )
+
+    assert result == []
+    assert db.scalars.call_count == 1
+
+
+def test_problem_view_is_workspace_scoped():
+    from app.services.notification_delivery_observability import (
+        list_notification_delivery_problems,
+    )
+
+    db = MagicMock()
+
+    db.scalars.side_effect = [
+        scalar_result([]),
+        scalar_result([]),
+    ]
+
+    list_notification_delivery_problems(
+        db,
+        workspace_id="workspace-secret",
+        now=NOW,
+    )
+
+    assert db.scalars.call_count == 2
+
+    for call in db.scalars.call_args_list:
+        statement = call.args[0]
+        params = statement.compile().params
+
+        assert "workspace-secret" in params.values()
+
+
+def test_problem_view_applies_global_limit():
+    from app.services.notification_delivery_observability import (
+        list_notification_delivery_problems,
+    )
+
+    db = MagicMock()
+
+    backup = delivery(
+        "backup-failed",
+        status="failed",
+        created_at=NOW,
+    )
+    backup.attempts = 1
+    backup.max_attempts = 5
+
+    lifecycle = delivery(
+        "lifecycle-failed",
+        status="failed",
+        created_at=NOW + timedelta(minutes=1),
+    )
+    lifecycle.attempts = 1
+    lifecycle.max_attempts = 5
+
+    db.scalars.side_effect = [
+        scalar_result([backup]),
+        scalar_result([lifecycle]),
+    ]
+
+    result = list_notification_delivery_problems(
+        db,
+        workspace_id="workspace-1",
+        limit=1,
+        now=NOW,
+    )
+
+    assert [item.id for item in result] == [
+        "lifecycle-failed"
+    ]

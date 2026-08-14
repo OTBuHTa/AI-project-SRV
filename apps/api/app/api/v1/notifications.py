@@ -25,6 +25,7 @@ from app.schemas.notifications import (
     NotificationRouteUpdate,
     NotificationDeliveryOut,
     NotificationDeliveryHealthOut,
+    NotificationDeliveryProblemOut,
 )
 
 
@@ -32,6 +33,37 @@ router = APIRouter(
     prefix="/api/v1/notifications",
     tags=["notifications"],
 )
+
+
+@router.get(
+    "/deliveries/problems",
+    response_model=list[NotificationDeliveryProblemOut],
+)
+def list_delivery_problems(
+    source: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=200),
+    context=Depends(require_permission("workspace.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services.notification_delivery_observability import (
+        VALID_SOURCES,
+        list_notification_delivery_problems,
+    )
+
+    if source is not None and source not in VALID_SOURCES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_source",
+        )
+
+    workspace, _membership = context
+
+    return list_notification_delivery_problems(
+        db,
+        workspace_id=str(workspace.id),
+        source=source,
+        limit=limit,
+    )
 
 
 @router.get(
