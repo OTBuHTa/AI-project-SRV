@@ -177,3 +177,149 @@ def test_create_destination_rejects_unsafe_endpoint():
     assert exc.value.status_code == 400
     assert "link-local" in exc.value.detail
     db.add.assert_not_called()
+
+
+def test_list_deliveries_rejects_invalid_source():
+    from app.api.v1.notifications import list_deliveries
+
+    db = MagicMock()
+
+    with pytest.raises(HTTPException) as exc:
+        list_deliveries(
+            source="unknown",
+            delivery_status=None,
+            limit=100,
+            context=context(),
+            db=db,
+        )
+
+    assert exc.value.status_code == 400
+    assert (
+        exc.value.detail
+        == "invalid_notification_delivery_source"
+    )
+
+
+def test_list_deliveries_rejects_invalid_status():
+    from app.api.v1.notifications import list_deliveries
+
+    db = MagicMock()
+
+    with pytest.raises(HTTPException) as exc:
+        list_deliveries(
+            source=None,
+            delivery_status="unknown",
+            limit=100,
+            context=context(),
+            db=db,
+        )
+
+    assert exc.value.status_code == 400
+    assert (
+        exc.value.detail
+        == "invalid_notification_delivery_status"
+    )
+
+
+def test_list_deliveries_uses_current_workspace():
+    from app.api.v1.notifications import list_deliveries
+
+    db = MagicMock()
+
+    with patch(
+        "app.services.notification_delivery_observability."
+        "list_notification_deliveries",
+        return_value=[],
+    ) as list_service:
+        result = list_deliveries(
+            source="backup",
+            delivery_status="failed",
+            limit=25,
+            context=context("workspace-1"),
+            db=db,
+        )
+
+    assert result == []
+
+    list_service.assert_called_once_with(
+        db,
+        workspace_id="workspace-1",
+        source="backup",
+        status="failed",
+        limit=25,
+    )
+
+
+def test_get_delivery_health_uses_current_workspace():
+    from app.api.v1.notifications import get_delivery_health
+
+    db = MagicMock()
+    expected = SimpleNamespace(status="healthy")
+
+    with patch(
+        "app.services.notification_delivery_observability."
+        "get_notification_delivery_health",
+        return_value=expected,
+    ) as health_service:
+        result = get_delivery_health(
+            context=context("workspace-1"),
+            db=db,
+        )
+
+    assert result is expected
+
+    health_service.assert_called_once_with(
+        db,
+        workspace_id="workspace-1",
+    )
+
+
+def test_list_delivery_problems_rejects_invalid_source():
+    from app.api.v1.notifications import (
+        list_delivery_problems,
+    )
+
+    db = MagicMock()
+
+    with pytest.raises(HTTPException) as exc:
+        list_delivery_problems(
+            source="unknown",
+            limit=100,
+            context=context(),
+            db=db,
+        )
+
+    assert exc.value.status_code == 400
+    assert (
+        exc.value.detail
+        == "invalid_notification_delivery_source"
+    )
+
+
+def test_list_delivery_problems_uses_current_workspace():
+    from app.api.v1.notifications import (
+        list_delivery_problems,
+    )
+
+    db = MagicMock()
+
+    with patch(
+        "app.services.notification_delivery_observability."
+        "list_notification_delivery_problems",
+        return_value=[],
+    ) as problem_service:
+        result = list_delivery_problems(
+            source="agent_lifecycle",
+            limit=25,
+            context=context("workspace-1"),
+            db=db,
+        )
+
+    assert result == []
+
+    problem_service.assert_called_once_with(
+        db,
+        workspace_id="workspace-1",
+        source="agent_lifecycle",
+        limit=25,
+    )
