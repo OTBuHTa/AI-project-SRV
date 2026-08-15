@@ -27,6 +27,13 @@ VALID_STATUSES = {
 }
 
 
+VALID_PROBLEMS = {
+    "retryable_failed",
+    "exhausted_failed",
+    "stale_sending",
+}
+
+
 @dataclass(frozen=True)
 class NotificationDeliveryRecord:
     id: str
@@ -76,6 +83,11 @@ def list_notification_deliveries(
     workspace_id: str,
     source: str | None = None,
     status: str | None = None,
+    destination_id: str | None = None,
+    channel: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    offset: int = 0,
     limit: int = 100,
 ) -> list[NotificationDeliveryRecord]:
     records: list[NotificationDeliveryRecord] = []
@@ -90,13 +102,36 @@ def list_notification_deliveries(
                 BackupAlertDelivery.status == status
             )
 
+        if destination_id is not None:
+            statement = statement.where(
+                BackupAlertDelivery.destination_id
+                == destination_id
+            )
+
+        if channel is not None:
+            statement = statement.where(
+                BackupAlertDelivery.channel == channel
+            )
+
+        if created_from is not None:
+            statement = statement.where(
+                BackupAlertDelivery.created_at
+                >= created_from
+            )
+
+        if created_to is not None:
+            statement = statement.where(
+                BackupAlertDelivery.created_at
+                <= created_to
+            )
+
         statement = (
             statement
             .order_by(
                 BackupAlertDelivery.created_at.desc(),
                 BackupAlertDelivery.id.desc(),
             )
-            .limit(limit)
+            .limit(offset + limit)
         )
 
         deliveries = db.scalars(statement).all()
@@ -122,13 +157,36 @@ def list_notification_deliveries(
                 AgentLifecycleAlertDelivery.status == status
             )
 
+        if destination_id is not None:
+            statement = statement.where(
+                AgentLifecycleAlertDelivery.destination_id
+                == destination_id
+            )
+
+        if channel is not None:
+            statement = statement.where(
+                AgentLifecycleAlertDelivery.channel == channel
+            )
+
+        if created_from is not None:
+            statement = statement.where(
+                AgentLifecycleAlertDelivery.created_at
+                >= created_from
+            )
+
+        if created_to is not None:
+            statement = statement.where(
+                AgentLifecycleAlertDelivery.created_at
+                <= created_to
+            )
+
         statement = (
             statement
             .order_by(
                 AgentLifecycleAlertDelivery.created_at.desc(),
                 AgentLifecycleAlertDelivery.id.desc(),
             )
-            .limit(limit)
+            .limit(offset + limit)
         )
 
         deliveries = db.scalars(statement).all()
@@ -149,7 +207,7 @@ def list_notification_deliveries(
         reverse=True,
     )
 
-    return records[:limit]
+    return records[offset:offset + limit]
 
 
 
@@ -381,15 +439,60 @@ def _problem_record(
     )
 
 
+def _problem_query_condition(
+    model,
+    *,
+    problem: str | None,
+    stale_before: datetime,
+):
+    retryable_failed = (
+        (model.status == "failed")
+        & (model.attempts < model.max_attempts)
+    )
+
+    exhausted_failed = (
+        (model.status == "failed")
+        & (model.attempts >= model.max_attempts)
+    )
+
+    stale_sending = (
+        (model.status == "sending")
+        & (model.last_attempt_at.is_not(None))
+        & (model.last_attempt_at <= stale_before)
+    )
+
+    if problem == "retryable_failed":
+        return retryable_failed
+
+    if problem == "exhausted_failed":
+        return exhausted_failed
+
+    if problem == "stale_sending":
+        return stale_sending
+
+    return (
+        retryable_failed
+        | exhausted_failed
+        | stale_sending
+    )
+
+
 def list_notification_delivery_problems(
     db: Session,
     *,
     workspace_id: str,
     source: str | None = None,
+    problem: str | None = None,
+    destination_id: str | None = None,
+    channel: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    offset: int = 0,
     limit: int = 100,
     now: datetime | None = None,
 ) -> list[NotificationDeliveryProblemRecord]:
     now = now or datetime.now(timezone.utc)
+
     stale_before = now - timedelta(
         seconds=CLAIM_TIMEOUT_SECONDS
     )
@@ -397,26 +500,42 @@ def list_notification_delivery_problems(
     records: list[NotificationDeliveryProblemRecord] = []
 
     def load(model, source_name: str):
-        statement = (
-            select(model)
-            .where(
-                model.workspace_id == workspace_id,
-                (
-                    (
-                        model.status == "failed"
-                    )
-                    | (
-                        (model.status == "sending")
-                        & (model.last_attempt_at.is_not(None))
-                        & (model.last_attempt_at <= stale_before)
-                    )
-                ),
+        statement = select(model).where(
+            model.workspace_id == workspace_id,
+            _problem_query_condition(
+                model,
+                problem=problem,
+                stale_before=stale_before,
+            ),
+        )
+
+        if destination_id is not None:
+            statement = statement.where(
+                model.destination_id == destination_id
             )
+
+        if channel is not None:
+            statement = statement.where(
+                model.channel == channel
+            )
+
+        if created_from is not None:
+            statement = statement.where(
+                model.created_at >= created_from
+            )
+
+        if created_to is not None:
+            statement = statement.where(
+                model.created_at <= created_to
+            )
+
+        statement = (
+            statement
             .order_by(
                 model.created_at.desc(),
                 model.id.desc(),
             )
-            .limit(limit)
+            .limit(offset + limit)
         )
 
         for delivery in db.scalars(statement).all():
@@ -426,7 +545,13 @@ def list_notification_delivery_problems(
                 now=now,
             )
 
-            if record is not None:
+            if (
+                record is not None
+                and (
+                    problem is None
+                    or record.problem == problem
+                )
+            ):
                 records.append(record)
 
     if source in (None, SOURCE_BACKUP):
@@ -449,4 +574,164 @@ def list_notification_delivery_problems(
         reverse=True,
     )
 
-    return records[:limit]
+    return records[offset:offset + limit]
+
+
+@dataclass(frozen=True)
+class NotificationDeliveryCount:
+    total: int
+    backup: int
+    agent_lifecycle: int
+
+
+def _count_deliveries(
+    db: Session,
+    *,
+    model,
+    workspace_id: str,
+    status: str | None = None,
+    destination_id: str | None = None,
+    channel: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    problem: str | None = None,
+    stale_before: datetime | None = None,
+) -> int:
+    statement = select(func.count(model.id)).where(
+        model.workspace_id == workspace_id
+    )
+
+    if status is not None:
+        statement = statement.where(
+            model.status == status
+        )
+
+    if destination_id is not None:
+        statement = statement.where(
+            model.destination_id == destination_id
+        )
+
+    if channel is not None:
+        statement = statement.where(
+            model.channel == channel
+        )
+
+    if created_from is not None:
+        statement = statement.where(
+            model.created_at >= created_from
+        )
+
+    if created_to is not None:
+        statement = statement.where(
+            model.created_at <= created_to
+        )
+
+    if stale_before is not None:
+        statement = statement.where(
+            _problem_query_condition(
+                model,
+                problem=problem,
+                stale_before=stale_before,
+            )
+        )
+
+    return int(db.scalar(statement) or 0)
+
+
+def get_notification_delivery_count(
+    db: Session,
+    *,
+    workspace_id: str,
+    source: str | None = None,
+    status: str | None = None,
+    destination_id: str | None = None,
+    channel: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+) -> NotificationDeliveryCount:
+    backup = 0
+    agent_lifecycle = 0
+
+    if source in (None, SOURCE_BACKUP):
+        backup = _count_deliveries(
+            db,
+            model=BackupAlertDelivery,
+            workspace_id=workspace_id,
+            status=status,
+            destination_id=destination_id,
+            channel=channel,
+            created_from=created_from,
+            created_to=created_to,
+        )
+
+    if source in (None, SOURCE_AGENT_LIFECYCLE):
+        agent_lifecycle = _count_deliveries(
+            db,
+            model=AgentLifecycleAlertDelivery,
+            workspace_id=workspace_id,
+            status=status,
+            destination_id=destination_id,
+            channel=channel,
+            created_from=created_from,
+            created_to=created_to,
+        )
+
+    return NotificationDeliveryCount(
+        total=backup + agent_lifecycle,
+        backup=backup,
+        agent_lifecycle=agent_lifecycle,
+    )
+
+
+def get_notification_delivery_problem_count(
+    db: Session,
+    *,
+    workspace_id: str,
+    source: str | None = None,
+    problem: str | None = None,
+    destination_id: str | None = None,
+    channel: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    now: datetime | None = None,
+) -> NotificationDeliveryCount:
+    now = now or datetime.now(timezone.utc)
+
+    stale_before = now - timedelta(
+        seconds=CLAIM_TIMEOUT_SECONDS
+    )
+
+    backup = 0
+    agent_lifecycle = 0
+
+    if source in (None, SOURCE_BACKUP):
+        backup = _count_deliveries(
+            db,
+            model=BackupAlertDelivery,
+            workspace_id=workspace_id,
+            destination_id=destination_id,
+            channel=channel,
+            created_from=created_from,
+            created_to=created_to,
+            problem=problem,
+            stale_before=stale_before,
+        )
+
+    if source in (None, SOURCE_AGENT_LIFECYCLE):
+        agent_lifecycle = _count_deliveries(
+            db,
+            model=AgentLifecycleAlertDelivery,
+            workspace_id=workspace_id,
+            destination_id=destination_id,
+            channel=channel,
+            created_from=created_from,
+            created_to=created_to,
+            problem=problem,
+            stale_before=stale_before,
+        )
+
+    return NotificationDeliveryCount(
+        total=backup + agent_lifecycle,
+        backup=backup,
+        agent_lifecycle=agent_lifecycle,
+    )

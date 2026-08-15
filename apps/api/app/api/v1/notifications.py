@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -26,6 +27,7 @@ from app.schemas.notifications import (
     NotificationDeliveryOut,
     NotificationDeliveryHealthOut,
     NotificationDeliveryProblemOut,
+    NotificationDeliveryCountOut,
 )
 
 
@@ -35,17 +37,47 @@ router = APIRouter(
 )
 
 
+
+def _validate_delivery_time_range(
+    created_from: datetime | None,
+    created_to: datetime | None,
+) -> None:
+    for value in (created_from, created_to):
+        if value is not None and value.utcoffset() is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_notification_delivery_timezone",
+            )
+
+    if (
+        created_from is not None
+        and created_to is not None
+        and created_from > created_to
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_time_range",
+        )
+
+
 @router.get(
     "/deliveries/problems",
     response_model=list[NotificationDeliveryProblemOut],
 )
 def list_delivery_problems(
     source: str | None = Query(default=None),
+    problem: str | None = Query(default=None),
+    destination_id: str | None = Query(default=None),
+    channel: str | None = Query(default=None),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
+    offset: int = Query(default=0, ge=0, le=10000),
     limit: int = Query(default=100, ge=1, le=200),
     context=Depends(require_permission("workspace.read")),
     db: Session = Depends(get_db),
 ):
     from app.services.notification_delivery_observability import (
+        VALID_PROBLEMS,
         VALID_SOURCES,
         list_notification_delivery_problems,
     )
@@ -56,12 +88,29 @@ def list_delivery_problems(
             detail="invalid_notification_delivery_source",
         )
 
+    if problem is not None and problem not in VALID_PROBLEMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_problem",
+        )
+
+    _validate_delivery_time_range(
+        created_from,
+        created_to,
+    )
+
     workspace, _membership = context
 
     return list_notification_delivery_problems(
         db,
         workspace_id=str(workspace.id),
         source=source,
+        problem=problem,
+        destination_id=destination_id,
+        channel=channel,
+        created_from=created_from,
+        created_to=created_to,
+        offset=offset,
         limit=limit,
     )
 
@@ -96,6 +145,11 @@ def list_deliveries(
         default=None,
         alias="status",
     ),
+    destination_id: str | None = Query(default=None),
+    channel: str | None = Query(default=None),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
+    offset: int = Query(default=0, ge=0, le=10000),
     limit: int = Query(default=100, ge=1, le=200),
     context=Depends(require_permission("workspace.read")),
     db: Session = Depends(get_db),
@@ -121,6 +175,11 @@ def list_deliveries(
             detail="invalid_notification_delivery_status",
         )
 
+    _validate_delivery_time_range(
+        created_from,
+        created_to,
+    )
+
     workspace, _membership = context
 
     return list_notification_deliveries(
@@ -128,7 +187,120 @@ def list_deliveries(
         workspace_id=str(workspace.id),
         source=source,
         status=delivery_status,
+        destination_id=destination_id,
+        channel=channel,
+        created_from=created_from,
+        created_to=created_to,
+        offset=offset,
         limit=limit,
+    )
+
+
+@router.get(
+    "/deliveries/count",
+    response_model=NotificationDeliveryCountOut,
+)
+def get_delivery_count(
+    source: str | None = Query(default=None),
+    delivery_status: str | None = Query(
+        default=None,
+        alias="status",
+    ),
+    destination_id: str | None = Query(default=None),
+    channel: str | None = Query(default=None),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
+    context=Depends(require_permission("workspace.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services.notification_delivery_observability import (
+        VALID_SOURCES,
+        VALID_STATUSES,
+        get_notification_delivery_count,
+    )
+
+    if source is not None and source not in VALID_SOURCES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_source",
+        )
+
+    if (
+        delivery_status is not None
+        and delivery_status not in VALID_STATUSES
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_status",
+        )
+
+    _validate_delivery_time_range(
+        created_from,
+        created_to,
+    )
+
+    workspace, _membership = context
+
+    return get_notification_delivery_count(
+        db,
+        workspace_id=str(workspace.id),
+        source=source,
+        status=delivery_status,
+        destination_id=destination_id,
+        channel=channel,
+        created_from=created_from,
+        created_to=created_to,
+    )
+
+
+@router.get(
+    "/deliveries/problems/count",
+    response_model=NotificationDeliveryCountOut,
+)
+def get_delivery_problem_count(
+    source: str | None = Query(default=None),
+    problem: str | None = Query(default=None),
+    destination_id: str | None = Query(default=None),
+    channel: str | None = Query(default=None),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
+    context=Depends(require_permission("workspace.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services.notification_delivery_observability import (
+        VALID_PROBLEMS,
+        VALID_SOURCES,
+        get_notification_delivery_problem_count,
+    )
+
+    if source is not None and source not in VALID_SOURCES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_source",
+        )
+
+    if problem is not None and problem not in VALID_PROBLEMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_problem",
+        )
+
+    _validate_delivery_time_range(
+        created_from,
+        created_to,
+    )
+
+    workspace, _membership = context
+
+    return get_notification_delivery_problem_count(
+        db,
+        workspace_id=str(workspace.id),
+        source=source,
+        problem=problem,
+        destination_id=destination_id,
+        channel=channel,
+        created_from=created_from,
+        created_to=created_to,
     )
 
 settings = get_settings()
