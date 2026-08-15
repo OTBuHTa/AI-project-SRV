@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -96,6 +97,11 @@ def list_deliveries(
         default=None,
         alias="status",
     ),
+    destination_id: str | None = Query(default=None),
+    channel: str | None = Query(default=None),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
+    offset: int = Query(default=0, ge=0, le=10000),
     limit: int = Query(default=100, ge=1, le=200),
     context=Depends(require_permission("workspace.read")),
     db: Session = Depends(get_db),
@@ -121,6 +127,16 @@ def list_deliveries(
             detail="invalid_notification_delivery_status",
         )
 
+    if (
+        created_from is not None
+        and created_to is not None
+        and created_from > created_to
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_time_range",
+        )
+
     workspace, _membership = context
 
     return list_notification_deliveries(
@@ -128,6 +144,11 @@ def list_deliveries(
         workspace_id=str(workspace.id),
         source=source,
         status=delivery_status,
+        destination_id=destination_id,
+        channel=channel,
+        created_from=created_from,
+        created_to=created_to,
+        offset=offset,
         limit=limit,
     )
 

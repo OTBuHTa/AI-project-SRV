@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -188,6 +189,11 @@ def test_list_deliveries_rejects_invalid_source():
         list_deliveries(
             source="unknown",
             delivery_status=None,
+            destination_id=None,
+            channel=None,
+            created_from=None,
+            created_to=None,
+            offset=0,
             limit=100,
             context=context(),
             db=db,
@@ -209,6 +215,11 @@ def test_list_deliveries_rejects_invalid_status():
         list_deliveries(
             source=None,
             delivery_status="unknown",
+            destination_id=None,
+            channel=None,
+            created_from=None,
+            created_to=None,
+            offset=0,
             limit=100,
             context=context(),
             db=db,
@@ -234,6 +245,15 @@ def test_list_deliveries_uses_current_workspace():
         result = list_deliveries(
             source="backup",
             delivery_status="failed",
+            destination_id="destination-1",
+            channel="webhook",
+            created_from=datetime(
+                2026, 8, 1, tzinfo=timezone.utc
+            ),
+            created_to=datetime(
+                2026, 8, 15, tzinfo=timezone.utc
+            ),
+            offset=10,
             limit=25,
             context=context("workspace-1"),
             db=db,
@@ -246,6 +266,15 @@ def test_list_deliveries_uses_current_workspace():
         workspace_id="workspace-1",
         source="backup",
         status="failed",
+        destination_id="destination-1",
+        channel="webhook",
+        created_from=datetime(
+            2026, 8, 1, tzinfo=timezone.utc
+        ),
+        created_to=datetime(
+            2026, 8, 15, tzinfo=timezone.utc
+        ),
+        offset=10,
         limit=25,
     )
 
@@ -322,4 +351,35 @@ def test_list_delivery_problems_uses_current_workspace():
         workspace_id="workspace-1",
         source="agent_lifecycle",
         limit=25,
+    )
+
+
+
+def test_list_deliveries_rejects_invalid_time_range():
+    from app.api.v1.notifications import list_deliveries
+
+    db = MagicMock()
+
+    with pytest.raises(HTTPException) as exc:
+        list_deliveries(
+            source=None,
+            delivery_status=None,
+            destination_id=None,
+            channel=None,
+            created_from=datetime(
+                2026, 8, 15, tzinfo=timezone.utc
+            ),
+            created_to=datetime(
+                2026, 8, 1, tzinfo=timezone.utc
+            ),
+            offset=0,
+            limit=100,
+            context=context("workspace-1"),
+            db=db,
+        )
+
+    assert exc.value.status_code == 400
+    assert (
+        exc.value.detail
+        == "invalid_notification_delivery_time_range"
     )

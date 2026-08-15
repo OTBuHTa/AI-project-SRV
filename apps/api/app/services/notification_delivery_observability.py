@@ -76,6 +76,11 @@ def list_notification_deliveries(
     workspace_id: str,
     source: str | None = None,
     status: str | None = None,
+    destination_id: str | None = None,
+    channel: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    offset: int = 0,
     limit: int = 100,
 ) -> list[NotificationDeliveryRecord]:
     records: list[NotificationDeliveryRecord] = []
@@ -90,13 +95,36 @@ def list_notification_deliveries(
                 BackupAlertDelivery.status == status
             )
 
+        if destination_id is not None:
+            statement = statement.where(
+                BackupAlertDelivery.destination_id
+                == destination_id
+            )
+
+        if channel is not None:
+            statement = statement.where(
+                BackupAlertDelivery.channel == channel
+            )
+
+        if created_from is not None:
+            statement = statement.where(
+                BackupAlertDelivery.created_at
+                >= created_from
+            )
+
+        if created_to is not None:
+            statement = statement.where(
+                BackupAlertDelivery.created_at
+                <= created_to
+            )
+
         statement = (
             statement
             .order_by(
                 BackupAlertDelivery.created_at.desc(),
                 BackupAlertDelivery.id.desc(),
             )
-            .limit(limit)
+            .limit(offset + limit)
         )
 
         deliveries = db.scalars(statement).all()
@@ -122,13 +150,36 @@ def list_notification_deliveries(
                 AgentLifecycleAlertDelivery.status == status
             )
 
+        if destination_id is not None:
+            statement = statement.where(
+                AgentLifecycleAlertDelivery.destination_id
+                == destination_id
+            )
+
+        if channel is not None:
+            statement = statement.where(
+                AgentLifecycleAlertDelivery.channel == channel
+            )
+
+        if created_from is not None:
+            statement = statement.where(
+                AgentLifecycleAlertDelivery.created_at
+                >= created_from
+            )
+
+        if created_to is not None:
+            statement = statement.where(
+                AgentLifecycleAlertDelivery.created_at
+                <= created_to
+            )
+
         statement = (
             statement
             .order_by(
                 AgentLifecycleAlertDelivery.created_at.desc(),
                 AgentLifecycleAlertDelivery.id.desc(),
             )
-            .limit(limit)
+            .limit(offset + limit)
         )
 
         deliveries = db.scalars(statement).all()
@@ -149,7 +200,7 @@ def list_notification_deliveries(
         reverse=True,
     )
 
-    return records[:limit]
+    return records[offset:offset + limit]
 
 
 
