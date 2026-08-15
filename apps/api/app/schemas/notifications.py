@@ -101,3 +101,9 @@ class NotificationDeliveryHealthOut(BaseModel):
 
 class NotificationDeliveryProblemOut(NotificationDeliveryOut):
     problem: str
+
+
+class NotificationDeliveryCountOut(BaseModel):
+    total: int
+    backup: int
+    agent_lifecycle: int

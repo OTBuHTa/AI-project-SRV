@@ -1082,3 +1082,107 @@ def test_problem_view_queries_cover_global_offset_window():
     for call in db.scalars.call_args_list:
         statement = call.args[0]
         assert 45 in statement.compile().params.values()
+
+
+def test_delivery_count_sums_both_sources():
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_count,
+    )
+
+    db = MagicMock()
+    db.scalar.side_effect = [7, 5]
+
+    result = get_notification_delivery_count(
+        db,
+        workspace_id="workspace-1",
+    )
+
+    assert result.total == 12
+    assert result.backup == 7
+    assert result.agent_lifecycle == 5
+    assert db.scalar.call_count == 2
+
+
+def test_delivery_count_respects_source_filter():
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_count,
+    )
+
+    db = MagicMock()
+    db.scalar.return_value = 4
+
+    result = get_notification_delivery_count(
+        db,
+        workspace_id="workspace-1",
+        source=SOURCE_BACKUP,
+    )
+
+    assert result.total == 4
+    assert result.backup == 4
+    assert result.agent_lifecycle == 0
+    assert db.scalar.call_count == 1
+
+    sql = str(db.scalar.call_args.args[0].compile())
+
+    assert "backup_alert_deliveries" in sql
+    assert "agent_lifecycle_alert_deliveries" not in sql
+
+
+def test_problem_count_sums_problem_records_only():
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_problem_count,
+    )
+
+    db = MagicMock()
+    db.scalar.side_effect = [3, 2]
+
+    result = get_notification_delivery_problem_count(
+        db,
+        workspace_id="workspace-1",
+        now=NOW,
+    )
+
+    assert result.total == 5
+    assert result.backup == 3
+    assert result.agent_lifecycle == 2
+
+    assert db.scalar.call_count == 2
+
+    for call in db.scalar.call_args_list:
+        compiled = call.args[0].compile()
+        sql = str(compiled)
+        values = set(compiled.params.values())
+
+        assert (
+            "backup_alert_deliveries" in sql
+            or "agent_lifecycle_alert_deliveries" in sql
+        )
+        assert "failed" in values
+        assert "sending" in values
+
+
+def test_problem_count_respects_problem_filter():
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_problem_count,
+    )
+
+    db = MagicMock()
+    db.scalar.return_value = 6
+
+    result = get_notification_delivery_problem_count(
+        db,
+        workspace_id="workspace-1",
+        source=SOURCE_AGENT_LIFECYCLE,
+        problem="exhausted_failed",
+        now=NOW,
+    )
+
+    assert result.total == 6
+    assert result.backup == 0
+    assert result.agent_lifecycle == 6
+    assert db.scalar.call_count == 1
+
+    sql = str(db.scalar.call_args.args[0].compile())
+
+    assert "agent_lifecycle_alert_deliveries" in sql
+    assert "backup_alert_deliveries" not in sql

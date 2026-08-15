@@ -575,3 +575,163 @@ def list_notification_delivery_problems(
     )
 
     return records[offset:offset + limit]
+
+
+@dataclass(frozen=True)
+class NotificationDeliveryCount:
+    total: int
+    backup: int
+    agent_lifecycle: int
+
+
+def _count_deliveries(
+    db: Session,
+    *,
+    model,
+    workspace_id: str,
+    status: str | None = None,
+    destination_id: str | None = None,
+    channel: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    problem: str | None = None,
+    stale_before: datetime | None = None,
+) -> int:
+    statement = select(func.count(model.id)).where(
+        model.workspace_id == workspace_id
+    )
+
+    if status is not None:
+        statement = statement.where(
+            model.status == status
+        )
+
+    if destination_id is not None:
+        statement = statement.where(
+            model.destination_id == destination_id
+        )
+
+    if channel is not None:
+        statement = statement.where(
+            model.channel == channel
+        )
+
+    if created_from is not None:
+        statement = statement.where(
+            model.created_at >= created_from
+        )
+
+    if created_to is not None:
+        statement = statement.where(
+            model.created_at <= created_to
+        )
+
+    if stale_before is not None:
+        statement = statement.where(
+            _problem_query_condition(
+                model,
+                problem=problem,
+                stale_before=stale_before,
+            )
+        )
+
+    return int(db.scalar(statement) or 0)
+
+
+def get_notification_delivery_count(
+    db: Session,
+    *,
+    workspace_id: str,
+    source: str | None = None,
+    status: str | None = None,
+    destination_id: str | None = None,
+    channel: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+) -> NotificationDeliveryCount:
+    backup = 0
+    agent_lifecycle = 0
+
+    if source in (None, SOURCE_BACKUP):
+        backup = _count_deliveries(
+            db,
+            model=BackupAlertDelivery,
+            workspace_id=workspace_id,
+            status=status,
+            destination_id=destination_id,
+            channel=channel,
+            created_from=created_from,
+            created_to=created_to,
+        )
+
+    if source in (None, SOURCE_AGENT_LIFECYCLE):
+        agent_lifecycle = _count_deliveries(
+            db,
+            model=AgentLifecycleAlertDelivery,
+            workspace_id=workspace_id,
+            status=status,
+            destination_id=destination_id,
+            channel=channel,
+            created_from=created_from,
+            created_to=created_to,
+        )
+
+    return NotificationDeliveryCount(
+        total=backup + agent_lifecycle,
+        backup=backup,
+        agent_lifecycle=agent_lifecycle,
+    )
+
+
+def get_notification_delivery_problem_count(
+    db: Session,
+    *,
+    workspace_id: str,
+    source: str | None = None,
+    problem: str | None = None,
+    destination_id: str | None = None,
+    channel: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    now: datetime | None = None,
+) -> NotificationDeliveryCount:
+    now = now or datetime.now(timezone.utc)
+
+    stale_before = now - timedelta(
+        seconds=CLAIM_TIMEOUT_SECONDS
+    )
+
+    backup = 0
+    agent_lifecycle = 0
+
+    if source in (None, SOURCE_BACKUP):
+        backup = _count_deliveries(
+            db,
+            model=BackupAlertDelivery,
+            workspace_id=workspace_id,
+            destination_id=destination_id,
+            channel=channel,
+            created_from=created_from,
+            created_to=created_to,
+            problem=problem,
+            stale_before=stale_before,
+        )
+
+    if source in (None, SOURCE_AGENT_LIFECYCLE):
+        agent_lifecycle = _count_deliveries(
+            db,
+            model=AgentLifecycleAlertDelivery,
+            workspace_id=workspace_id,
+            destination_id=destination_id,
+            channel=channel,
+            created_from=created_from,
+            created_to=created_to,
+            problem=problem,
+            stale_before=stale_before,
+        )
+
+    return NotificationDeliveryCount(
+        total=backup + agent_lifecycle,
+        backup=backup,
+        agent_lifecycle=agent_lifecycle,
+    )

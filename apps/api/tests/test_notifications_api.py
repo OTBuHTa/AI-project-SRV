@@ -466,3 +466,83 @@ def test_list_delivery_problems_rejects_invalid_time_range():
         exc.value.detail
         == "invalid_notification_delivery_time_range"
     )
+
+
+def test_get_delivery_count_uses_current_workspace():
+    from app.api.v1.notifications import get_delivery_count
+
+    db = MagicMock()
+
+    with patch(
+        "app.services.notification_delivery_observability."
+        "get_notification_delivery_count",
+        return_value=SimpleNamespace(
+            total=3,
+            backup=2,
+            agent_lifecycle=1,
+        ),
+    ) as count_service:
+        result = get_delivery_count(
+            source="backup",
+            delivery_status="failed",
+            destination_id="destination-1",
+            channel="webhook",
+            created_from=None,
+            created_to=None,
+            context=context("workspace-1"),
+            db=db,
+        )
+
+    assert result.total == 3
+
+    count_service.assert_called_once_with(
+        db,
+        workspace_id="workspace-1",
+        source="backup",
+        status="failed",
+        destination_id="destination-1",
+        channel="webhook",
+        created_from=None,
+        created_to=None,
+    )
+
+
+def test_get_delivery_problem_count_uses_current_workspace():
+    from app.api.v1.notifications import (
+        get_delivery_problem_count,
+    )
+
+    db = MagicMock()
+
+    with patch(
+        "app.services.notification_delivery_observability."
+        "get_notification_delivery_problem_count",
+        return_value=SimpleNamespace(
+            total=4,
+            backup=1,
+            agent_lifecycle=3,
+        ),
+    ) as count_service:
+        result = get_delivery_problem_count(
+            source="agent_lifecycle",
+            problem="retryable_failed",
+            destination_id="destination-1",
+            channel="webhook",
+            created_from=None,
+            created_to=None,
+            context=context("workspace-1"),
+            db=db,
+        )
+
+    assert result.total == 4
+
+    count_service.assert_called_once_with(
+        db,
+        workspace_id="workspace-1",
+        source="agent_lifecycle",
+        problem="retryable_failed",
+        destination_id="destination-1",
+        channel="webhook",
+        created_from=None,
+        created_to=None,
+    )
