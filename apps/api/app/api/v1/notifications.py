@@ -37,6 +37,29 @@ router = APIRouter(
 )
 
 
+
+def _validate_delivery_time_range(
+    created_from: datetime | None,
+    created_to: datetime | None,
+) -> None:
+    for value in (created_from, created_to):
+        if value is not None and value.utcoffset() is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_notification_delivery_timezone",
+            )
+
+    if (
+        created_from is not None
+        and created_to is not None
+        and created_from > created_to
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_time_range",
+        )
+
+
 @router.get(
     "/deliveries/problems",
     response_model=list[NotificationDeliveryProblemOut],
@@ -71,15 +94,10 @@ def list_delivery_problems(
             detail="invalid_notification_delivery_problem",
         )
 
-    if (
-        created_from is not None
-        and created_to is not None
-        and created_from > created_to
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="invalid_notification_delivery_time_range",
-        )
+    _validate_delivery_time_range(
+        created_from,
+        created_to,
+    )
 
     workspace, _membership = context
 
@@ -157,15 +175,10 @@ def list_deliveries(
             detail="invalid_notification_delivery_status",
         )
 
-    if (
-        created_from is not None
-        and created_to is not None
-        and created_from > created_to
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="invalid_notification_delivery_time_range",
-        )
+    _validate_delivery_time_range(
+        created_from,
+        created_to,
+    )
 
     workspace, _membership = context
 
@@ -221,15 +234,10 @@ def get_delivery_count(
             detail="invalid_notification_delivery_status",
         )
 
-    if (
-        created_from is not None
-        and created_to is not None
-        and created_from > created_to
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="invalid_notification_delivery_time_range",
-        )
+    _validate_delivery_time_range(
+        created_from,
+        created_to,
+    )
 
     workspace, _membership = context
 
@@ -277,15 +285,10 @@ def get_delivery_problem_count(
             detail="invalid_notification_delivery_problem",
         )
 
-    if (
-        created_from is not None
-        and created_to is not None
-        and created_from > created_to
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="invalid_notification_delivery_time_range",
-        )
+    _validate_delivery_time_range(
+        created_from,
+        created_to,
+    )
 
     workspace, _membership = context
 

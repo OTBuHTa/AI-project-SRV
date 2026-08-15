@@ -546,3 +546,70 @@ def test_get_delivery_problem_count_uses_current_workspace():
         created_from=None,
         created_to=None,
     )
+
+
+def test_delivery_time_range_rejects_naive_datetime():
+    from datetime import datetime, timezone
+
+    from app.api.v1.notifications import (
+        _validate_delivery_time_range,
+    )
+
+    created_from = datetime(2026, 8, 15, 12, 0)
+    created_to = datetime(
+        2026,
+        8,
+        15,
+        13,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        _validate_delivery_time_range(
+            created_from,
+            created_to,
+        )
+
+    assert exc.value.status_code == 400
+    assert (
+        exc.value.detail
+        == "invalid_notification_delivery_timezone"
+    )
+
+
+def test_delivery_time_range_rejects_reverse_range():
+    from datetime import datetime, timezone
+
+    from app.api.v1.notifications import (
+        _validate_delivery_time_range,
+    )
+
+    created_from = datetime(
+        2026,
+        8,
+        15,
+        14,
+        0,
+        tzinfo=timezone.utc,
+    )
+    created_to = datetime(
+        2026,
+        8,
+        15,
+        13,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        _validate_delivery_time_range(
+            created_from,
+            created_to,
+        )
+
+    assert exc.value.status_code == 400
+    assert (
+        exc.value.detail
+        == "invalid_notification_delivery_time_range"
+    )
