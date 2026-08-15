@@ -28,6 +28,8 @@ from app.schemas.notifications import (
     NotificationDeliveryHealthOut,
     NotificationDeliveryProblemOut,
     NotificationDeliveryCountOut,
+    NotificationDeliveryPageOut,
+    NotificationDeliveryProblemPageOut,
 )
 
 
@@ -58,6 +60,142 @@ def _validate_delivery_time_range(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="invalid_notification_delivery_time_range",
         )
+
+
+@router.get(
+    "/deliveries/page",
+    response_model=NotificationDeliveryPageOut,
+)
+def list_deliveries_page(
+    source: str | None = Query(default=None),
+    delivery_status: str | None = Query(
+        default=None,
+        alias="status",
+    ),
+    destination_id: str | None = Query(default=None),
+    channel: str | None = Query(default=None),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
+    cursor: str | None = Query(
+        default=None,
+        max_length=4096,
+    ),
+    limit: int = Query(default=100, ge=1, le=200),
+    context=Depends(require_permission("workspace.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services.notification_delivery_observability import (
+        NotificationDeliveryCursorError,
+        VALID_SOURCES,
+        VALID_STATUSES,
+        list_notification_deliveries_page,
+    )
+
+    if source is not None and source not in VALID_SOURCES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_source",
+        )
+
+    if (
+        delivery_status is not None
+        and delivery_status not in VALID_STATUSES
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_status",
+        )
+
+    _validate_delivery_time_range(
+        created_from,
+        created_to,
+    )
+
+    workspace, _membership = context
+
+    try:
+        return list_notification_deliveries_page(
+            db,
+            workspace_id=str(workspace.id),
+            source=source,
+            status=delivery_status,
+            destination_id=destination_id,
+            channel=channel,
+            created_from=created_from,
+            created_to=created_to,
+            cursor=cursor,
+            limit=limit,
+        )
+    except NotificationDeliveryCursorError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_cursor",
+        ) from exc
+
+
+@router.get(
+    "/deliveries/problems/page",
+    response_model=NotificationDeliveryProblemPageOut,
+)
+def list_delivery_problems_page(
+    source: str | None = Query(default=None),
+    problem: str | None = Query(default=None),
+    destination_id: str | None = Query(default=None),
+    channel: str | None = Query(default=None),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
+    cursor: str | None = Query(
+        default=None,
+        max_length=4096,
+    ),
+    limit: int = Query(default=100, ge=1, le=200),
+    context=Depends(require_permission("workspace.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services.notification_delivery_observability import (
+        NotificationDeliveryCursorError,
+        VALID_PROBLEMS,
+        VALID_SOURCES,
+        list_notification_delivery_problems_page,
+    )
+
+    if source is not None and source not in VALID_SOURCES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_source",
+        )
+
+    if problem is not None and problem not in VALID_PROBLEMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_problem",
+        )
+
+    _validate_delivery_time_range(
+        created_from,
+        created_to,
+    )
+
+    workspace, _membership = context
+
+    try:
+        return list_notification_delivery_problems_page(
+            db,
+            workspace_id=str(workspace.id),
+            source=source,
+            problem=problem,
+            destination_id=destination_id,
+            channel=channel,
+            created_from=created_from,
+            created_to=created_to,
+            cursor=cursor,
+            limit=limit,
+        )
+    except NotificationDeliveryCursorError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_cursor",
+        ) from exc
 
 
 @router.get(
