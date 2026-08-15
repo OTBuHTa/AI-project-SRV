@@ -24,6 +24,7 @@ Supported query capabilities now include:
 - `channel`;
 - `created_from`;
 - `created_to`;
+- `created_from` and `created_to` must be timezone-aware ISO datetimes;
 - `offset`;
 - `limit`.
 
@@ -46,6 +47,7 @@ Supported query capabilities include:
 - `channel`;
 - `created_from`;
 - `created_to`;
+- `created_from` and `created_to` must be timezone-aware ISO datetimes;
 - `offset`;
 - `limit`.
 

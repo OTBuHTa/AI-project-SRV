@@ -31,6 +31,7 @@ Supports:
 - destination ID;
 - channel;
 - creation time range;
+- timezone-aware creation timestamps;
 - offset;
 - bounded limit.
 
@@ -54,6 +55,7 @@ Supports:
 - destination ID;
 - channel;
 - creation time range;
+- timezone-aware creation timestamps;
 - offset;
 - bounded limit.
 
