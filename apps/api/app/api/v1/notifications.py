@@ -42,11 +42,18 @@ router = APIRouter(
 )
 def list_delivery_problems(
     source: str | None = Query(default=None),
+    problem: str | None = Query(default=None),
+    destination_id: str | None = Query(default=None),
+    channel: str | None = Query(default=None),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
+    offset: int = Query(default=0, ge=0, le=10000),
     limit: int = Query(default=100, ge=1, le=200),
     context=Depends(require_permission("workspace.read")),
     db: Session = Depends(get_db),
 ):
     from app.services.notification_delivery_observability import (
+        VALID_PROBLEMS,
         VALID_SOURCES,
         list_notification_delivery_problems,
     )
@@ -57,12 +64,34 @@ def list_delivery_problems(
             detail="invalid_notification_delivery_source",
         )
 
+    if problem is not None and problem not in VALID_PROBLEMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_problem",
+        )
+
+    if (
+        created_from is not None
+        and created_to is not None
+        and created_from > created_to
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_notification_delivery_time_range",
+        )
+
     workspace, _membership = context
 
     return list_notification_delivery_problems(
         db,
         workspace_id=str(workspace.id),
         source=source,
+        problem=problem,
+        destination_id=destination_id,
+        channel=channel,
+        created_from=created_from,
+        created_to=created_to,
+        offset=offset,
         limit=limit,
     )
 

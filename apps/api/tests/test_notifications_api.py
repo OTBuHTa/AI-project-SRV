@@ -313,6 +313,12 @@ def test_list_delivery_problems_rejects_invalid_source():
     with pytest.raises(HTTPException) as exc:
         list_delivery_problems(
             source="unknown",
+            problem=None,
+            destination_id=None,
+            channel=None,
+            created_from=None,
+            created_to=None,
+            offset=0,
             limit=100,
             context=context(),
             db=db,
@@ -339,6 +345,12 @@ def test_list_delivery_problems_uses_current_workspace():
     ) as problem_service:
         result = list_delivery_problems(
             source="agent_lifecycle",
+            problem="retryable_failed",
+            destination_id="destination-1",
+            channel="webhook",
+            created_from=None,
+            created_to=None,
+            offset=10,
             limit=25,
             context=context("workspace-1"),
             db=db,
@@ -350,6 +362,12 @@ def test_list_delivery_problems_uses_current_workspace():
         db,
         workspace_id="workspace-1",
         source="agent_lifecycle",
+        problem="retryable_failed",
+        destination_id="destination-1",
+        channel="webhook",
+        created_from=None,
+        created_to=None,
+        offset=10,
         limit=25,
     )
 
@@ -375,6 +393,71 @@ def test_list_deliveries_rejects_invalid_time_range():
             offset=0,
             limit=100,
             context=context("workspace-1"),
+            db=db,
+        )
+
+    assert exc.value.status_code == 400
+    assert (
+        exc.value.detail
+        == "invalid_notification_delivery_time_range"
+    )
+
+
+def test_list_delivery_problems_rejects_invalid_problem():
+    from app.api.v1.notifications import (
+        list_delivery_problems,
+    )
+
+    db = MagicMock()
+
+    with pytest.raises(HTTPException) as exc:
+        list_delivery_problems(
+            source=None,
+            problem="unknown",
+            destination_id=None,
+            channel=None,
+            created_from=None,
+            created_to=None,
+            offset=0,
+            limit=100,
+            context=context(),
+            db=db,
+        )
+
+    assert exc.value.status_code == 400
+    assert (
+        exc.value.detail
+        == "invalid_notification_delivery_problem"
+    )
+
+
+def test_list_delivery_problems_rejects_invalid_time_range():
+    from datetime import datetime, timezone
+
+    from app.api.v1.notifications import (
+        list_delivery_problems,
+    )
+
+    db = MagicMock()
+
+    created_from = datetime(
+        2026, 8, 15, 12, 0, tzinfo=timezone.utc
+    )
+    created_to = datetime(
+        2026, 8, 14, 12, 0, tzinfo=timezone.utc
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        list_delivery_problems(
+            source=None,
+            problem=None,
+            destination_id=None,
+            channel=None,
+            created_from=created_from,
+            created_to=created_to,
+            offset=0,
+            limit=100,
+            context=context(),
             db=db,
         )
 

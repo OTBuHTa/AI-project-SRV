@@ -938,3 +938,147 @@ def test_delivery_history_queries_cover_global_offset_window():
         # Each source must expose enough rows for the global
         # merge + offset operation: offset + limit = 45.
         assert 45 in params.values()
+
+
+def test_problem_view_filters_retryable_failures_in_sql():
+    from app.services.notification_delivery_observability import (
+        list_notification_delivery_problems,
+    )
+
+    db = MagicMock()
+    db.scalars.return_value = scalar_result([])
+
+    list_notification_delivery_problems(
+        db,
+        workspace_id="workspace-1",
+        source=SOURCE_BACKUP,
+        problem="retryable_failed",
+        now=NOW,
+    )
+
+    statement = db.scalars.call_args.args[0]
+    sql = str(statement.compile())
+
+    assert "backup_alert_deliveries" in sql
+    assert "agent_lifecycle_alert_deliveries" not in sql
+    assert "attempts <" in sql
+
+
+def test_problem_view_applies_extended_filters():
+    from app.services.notification_delivery_observability import (
+        list_notification_delivery_problems,
+    )
+
+    created_from = NOW - timedelta(hours=1)
+    created_to = NOW + timedelta(hours=1)
+
+    db = MagicMock()
+    db.scalars.side_effect = [
+        scalar_result([]),
+        scalar_result([]),
+    ]
+
+    list_notification_delivery_problems(
+        db,
+        workspace_id="workspace-1",
+        destination_id="destination-1",
+        channel="webhook",
+        created_from=created_from,
+        created_to=created_to,
+        now=NOW,
+    )
+
+    assert db.scalars.call_count == 2
+
+    for call in db.scalars.call_args_list:
+        statement = call.args[0]
+        values = set(statement.compile().params.values())
+
+        assert "workspace-1" in values
+        assert "destination-1" in values
+        assert "webhook" in values
+        assert created_from in values
+        assert created_to in values
+
+
+def test_problem_view_applies_offset_after_global_merge():
+    from app.services.notification_delivery_observability import (
+        list_notification_delivery_problems,
+    )
+
+    backup_new = delivery(
+        "backup-new",
+        status="failed",
+        created_at=NOW + timedelta(minutes=4),
+    )
+    backup_new.attempts = 1
+    backup_new.max_attempts = 5
+
+    backup_old = delivery(
+        "backup-old",
+        status="failed",
+        created_at=NOW + timedelta(minutes=1),
+    )
+    backup_old.attempts = 1
+    backup_old.max_attempts = 5
+
+    lifecycle_new = delivery(
+        "lifecycle-new",
+        status="failed",
+        created_at=NOW + timedelta(minutes=3),
+    )
+    lifecycle_new.attempts = 1
+    lifecycle_new.max_attempts = 5
+
+    lifecycle_old = delivery(
+        "lifecycle-old",
+        status="failed",
+        created_at=NOW,
+    )
+    lifecycle_old.attempts = 1
+    lifecycle_old.max_attempts = 5
+
+    db = MagicMock()
+    db.scalars.side_effect = [
+        scalar_result([backup_new, backup_old]),
+        scalar_result([lifecycle_new, lifecycle_old]),
+    ]
+
+    result = list_notification_delivery_problems(
+        db,
+        workspace_id="workspace-1",
+        offset=1,
+        limit=2,
+        now=NOW,
+    )
+
+    assert [item.id for item in result] == [
+        "lifecycle-new",
+        "backup-old",
+    ]
+
+
+def test_problem_view_queries_cover_global_offset_window():
+    from app.services.notification_delivery_observability import (
+        list_notification_delivery_problems,
+    )
+
+    db = MagicMock()
+    db.scalars.side_effect = [
+        scalar_result([]),
+        scalar_result([]),
+    ]
+
+    list_notification_delivery_problems(
+        db,
+        workspace_id="workspace-1",
+        offset=20,
+        limit=25,
+        now=NOW,
+    )
+
+    assert db.scalars.call_count == 2
+
+    for call in db.scalars.call_args_list:
+        statement = call.args[0]
+        assert 45 in statement.compile().params.values()

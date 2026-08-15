@@ -27,6 +27,13 @@ VALID_STATUSES = {
 }
 
 
+VALID_PROBLEMS = {
+    "retryable_failed",
+    "exhausted_failed",
+    "stale_sending",
+}
+
+
 @dataclass(frozen=True)
 class NotificationDeliveryRecord:
     id: str
@@ -432,15 +439,60 @@ def _problem_record(
     )
 
 
+def _problem_query_condition(
+    model,
+    *,
+    problem: str | None,
+    stale_before: datetime,
+):
+    retryable_failed = (
+        (model.status == "failed")
+        & (model.attempts < model.max_attempts)
+    )
+
+    exhausted_failed = (
+        (model.status == "failed")
+        & (model.attempts >= model.max_attempts)
+    )
+
+    stale_sending = (
+        (model.status == "sending")
+        & (model.last_attempt_at.is_not(None))
+        & (model.last_attempt_at <= stale_before)
+    )
+
+    if problem == "retryable_failed":
+        return retryable_failed
+
+    if problem == "exhausted_failed":
+        return exhausted_failed
+
+    if problem == "stale_sending":
+        return stale_sending
+
+    return (
+        retryable_failed
+        | exhausted_failed
+        | stale_sending
+    )
+
+
 def list_notification_delivery_problems(
     db: Session,
     *,
     workspace_id: str,
     source: str | None = None,
+    problem: str | None = None,
+    destination_id: str | None = None,
+    channel: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    offset: int = 0,
     limit: int = 100,
     now: datetime | None = None,
 ) -> list[NotificationDeliveryProblemRecord]:
     now = now or datetime.now(timezone.utc)
+
     stale_before = now - timedelta(
         seconds=CLAIM_TIMEOUT_SECONDS
     )
@@ -448,26 +500,42 @@ def list_notification_delivery_problems(
     records: list[NotificationDeliveryProblemRecord] = []
 
     def load(model, source_name: str):
-        statement = (
-            select(model)
-            .where(
-                model.workspace_id == workspace_id,
-                (
-                    (
-                        model.status == "failed"
-                    )
-                    | (
-                        (model.status == "sending")
-                        & (model.last_attempt_at.is_not(None))
-                        & (model.last_attempt_at <= stale_before)
-                    )
-                ),
+        statement = select(model).where(
+            model.workspace_id == workspace_id,
+            _problem_query_condition(
+                model,
+                problem=problem,
+                stale_before=stale_before,
+            ),
+        )
+
+        if destination_id is not None:
+            statement = statement.where(
+                model.destination_id == destination_id
             )
+
+        if channel is not None:
+            statement = statement.where(
+                model.channel == channel
+            )
+
+        if created_from is not None:
+            statement = statement.where(
+                model.created_at >= created_from
+            )
+
+        if created_to is not None:
+            statement = statement.where(
+                model.created_at <= created_to
+            )
+
+        statement = (
+            statement
             .order_by(
                 model.created_at.desc(),
                 model.id.desc(),
             )
-            .limit(limit)
+            .limit(offset + limit)
         )
 
         for delivery in db.scalars(statement).all():
@@ -477,7 +545,13 @@ def list_notification_delivery_problems(
                 now=now,
             )
 
-            if record is not None:
+            if (
+                record is not None
+                and (
+                    problem is None
+                    or record.problem == problem
+                )
+            ):
                 records.append(record)
 
     if source in (None, SOURCE_BACKUP):
@@ -500,4 +574,4 @@ def list_notification_delivery_problems(
         reverse=True,
     )
 
-    return records[:limit]
+    return records[offset:offset + limit]
