@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import StrEnum
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -909,5 +909,75 @@ class BackupAlertDelivery(Base):
             "alert_event_id",
             "destination_id",
             name="uq_backup_alert_delivery_event_destination",
+        ),
+    )
+
+
+class WorkerOperationalState(Base):
+    __tablename__ = "worker_operational_states"
+
+    worker_name: Mapped[str] = mapped_column(
+        String(64),
+        primary_key=True,
+    )
+
+    last_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    last_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    last_success_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    last_failure_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    last_iteration_success: Mapped[bool | None] = mapped_column(
+        Boolean,
+        nullable=True,
+    )
+
+    last_processed_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    last_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "worker_name IN ("
+            "'backup_scheduler',"
+            "'backup_alert_delivery',"
+            "'agent_lifecycle_alert_delivery'"
+            ")",
+            name="ck_worker_operational_state_name",
         ),
     )

@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.health import router as health_router
+from app.api.metrics import router as metrics_router
 from app.api.v1.audit import router as audit_router
 from app.api.v1.agents import router as agents_router
 from app.api.v1.auth import router as auth_router
@@ -67,9 +68,10 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-app = FastAPI(title=settings.app_name, version="0.1.24-alpha", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.1.25-alpha", lifespan=lifespan)
 app.add_middleware(RequestContextMiddleware)
 app.include_router(health_router)
+app.include_router(metrics_router)
 app.include_router(auth_router)
 app.include_router(workspaces_router)
 app.include_router(audit_router)
@@ -88,6 +90,6 @@ app.include_router(inventory_router)
 def api_root():
     return {
         "name": settings.app_name,
-        "version": "0.1.24-alpha",
+        "version": "0.1.25-alpha",
         "phase": "Infrastructure Inventory + Lifecycle",
     }

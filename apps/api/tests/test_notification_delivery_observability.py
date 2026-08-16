@@ -1615,3 +1615,89 @@ def test_delivery_cursor_crosses_source_at_same_timestamp():
             "lifecycle-z",
         )
     ]
+
+
+def test_operational_snapshot_reports_source_counts_and_pending_age():
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_operational_snapshot,
+    )
+
+    db = MagicMock()
+
+    db.execute.side_effect = [
+        execute_result(
+            health_row(
+                total=5,
+                pending=2,
+                sending=1,
+                delivered=1,
+                failed=1,
+                retryable_failed=1,
+            )
+        ),
+        execute_result(
+            health_row(
+                total=4,
+                delivered=2,
+                failed=1,
+                canceled=1,
+                exhausted_failed=1,
+            )
+        ),
+    ]
+
+    db.scalar.side_effect = [
+        NOW - timedelta(seconds=120),
+        None,
+    ]
+
+    result = get_notification_delivery_operational_snapshot(
+        db,
+        now=NOW,
+    )
+
+    assert result.observed_at == NOW
+
+    assert result.backup.counts.total == 5
+    assert result.backup.counts.pending == 2
+    assert result.backup.counts.retryable_failed == 1
+    assert result.backup.oldest_pending_age_seconds == 120.0
+
+    assert result.agent_lifecycle.counts.total == 4
+    assert result.agent_lifecycle.counts.delivered == 2
+    assert result.agent_lifecycle.counts.exhausted_failed == 1
+    assert (
+        result.agent_lifecycle.oldest_pending_age_seconds
+        == 0.0
+    )
+
+    assert db.execute.call_count == 2
+    assert db.scalar.call_count == 2
+
+
+def test_operational_snapshot_uses_claim_timeout_for_stale_sending():
+    from app.services.notification_delivery_observability import (
+        get_notification_delivery_operational_snapshot,
+    )
+
+    db = MagicMock()
+
+    db.execute.side_effect = [
+        execute_result(health_row()),
+        execute_result(health_row()),
+    ]
+
+    db.scalar.side_effect = [None, None]
+
+    get_notification_delivery_operational_snapshot(
+        db,
+        now=NOW,
+    )
+
+    expected_cutoff = NOW - timedelta(seconds=300)
+
+    for call in db.execute.call_args_list:
+        statement = call.args[0]
+        params = statement.compile().params
+
+        assert expected_cutoff in params.values()

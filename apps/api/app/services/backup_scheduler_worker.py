@@ -15,6 +15,12 @@ from app.services.backup_schedule_executor import (
     mark_schedule_started,
     mark_schedule_succeeded,
 )
+from app.services.worker_operational_state import (
+    WORKER_BACKUP_SCHEDULER,
+    persist_worker_failed,
+    persist_worker_started,
+    persist_worker_succeeded,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,14 +94,59 @@ def run_once() -> int:
     return processed
 
 
+def _record_started() -> None:
+    try:
+        persist_worker_started(
+            worker_name=WORKER_BACKUP_SCHEDULER,
+            session_factory=SessionLocal,
+        )
+    except Exception:
+        logger.exception(
+            "backup scheduler observability start write failed"
+        )
+
+
+def _record_succeeded(processed: int) -> None:
+    try:
+        persist_worker_succeeded(
+            worker_name=WORKER_BACKUP_SCHEDULER,
+            processed_count=processed,
+            session_factory=SessionLocal,
+        )
+    except Exception:
+        logger.exception(
+            "backup scheduler observability success write failed"
+        )
+
+
+def _record_failed(error: object) -> None:
+    try:
+        persist_worker_failed(
+            worker_name=WORKER_BACKUP_SCHEDULER,
+            error=error,
+            session_factory=SessionLocal,
+        )
+    except Exception:
+        logger.exception(
+            "backup scheduler observability failure write failed"
+        )
+
+
 def run_forever() -> None:
     logger.info("backup scheduler worker started")
 
     while True:
+        _record_started()
+
         try:
-            run_once()
-        except Exception:
-            logger.exception("backup scheduler iteration failed")
+            processed = run_once()
+        except Exception as exc:
+            _record_failed(exc)
+            logger.exception(
+                "backup scheduler iteration failed"
+            )
+        else:
+            _record_succeeded(processed)
 
         time.sleep(POLL_INTERVAL_SECONDS)
 

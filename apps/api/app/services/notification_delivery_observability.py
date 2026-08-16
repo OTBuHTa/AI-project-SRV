@@ -1374,3 +1374,161 @@ def list_notification_delivery_problems_page(
         has_more=has_more,
         observed_at=observed_at,
     )
+
+
+@dataclass(frozen=True)
+class NotificationDeliveryOperationalSource:
+    counts: NotificationDeliveryHealthCounts
+    oldest_pending_age_seconds: float
+
+
+@dataclass(frozen=True)
+class NotificationDeliveryOperationalSnapshot:
+    observed_at: datetime
+    backup: NotificationDeliveryOperationalSource
+    agent_lifecycle: NotificationDeliveryOperationalSource
+
+
+def _global_delivery_health_counts(
+    db: Session,
+    *,
+    model,
+    stale_before: datetime,
+) -> NotificationDeliveryHealthCounts:
+    row = db.execute(
+        select(
+            func.count(model.id).label("total"),
+            func.sum(
+                case((model.status == "pending", 1), else_=0)
+            ).label("pending"),
+            func.sum(
+                case((model.status == "sending", 1), else_=0)
+            ).label("sending"),
+            func.sum(
+                case((model.status == "delivered", 1), else_=0)
+            ).label("delivered"),
+            func.sum(
+                case((model.status == "failed", 1), else_=0)
+            ).label("failed"),
+            func.sum(
+                case((model.status == "canceled", 1), else_=0)
+            ).label("canceled"),
+            func.sum(
+                case(
+                    (
+                        (model.status == "failed")
+                        & (model.attempts < model.max_attempts),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("retryable_failed"),
+            func.sum(
+                case(
+                    (
+                        (model.status == "failed")
+                        & (model.attempts >= model.max_attempts),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("exhausted_failed"),
+            func.sum(
+                case(
+                    (
+                        (model.status == "sending")
+                        & (model.last_attempt_at.is_not(None))
+                        & (model.last_attempt_at <= stale_before),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("stale_sending"),
+        )
+    ).one()
+
+    return NotificationDeliveryHealthCounts(
+        total=int(row.total or 0),
+        pending=int(row.pending or 0),
+        sending=int(row.sending or 0),
+        delivered=int(row.delivered or 0),
+        failed=int(row.failed or 0),
+        canceled=int(row.canceled or 0),
+        retryable_failed=int(row.retryable_failed or 0),
+        exhausted_failed=int(row.exhausted_failed or 0),
+        stale_sending=int(row.stale_sending or 0),
+    )
+
+
+def _oldest_pending_age_seconds(
+    db: Session,
+    *,
+    model,
+    now: datetime,
+) -> float:
+    oldest = db.scalar(
+        select(func.min(model.created_at)).where(
+            model.status == "pending"
+        )
+    )
+
+    if oldest is None:
+        return 0.0
+
+    if oldest.tzinfo is None:
+        oldest = oldest.replace(tzinfo=timezone.utc)
+
+    age = (
+        now.astimezone(timezone.utc)
+        - oldest.astimezone(timezone.utc)
+    ).total_seconds()
+
+    return max(0.0, age)
+
+
+def get_notification_delivery_operational_snapshot(
+    db: Session,
+    *,
+    now: datetime | None = None,
+) -> NotificationDeliveryOperationalSnapshot:
+    now = now or datetime.now(timezone.utc)
+
+    stale_before = now - timedelta(
+        seconds=CLAIM_TIMEOUT_SECONDS
+    )
+
+    backup = NotificationDeliveryOperationalSource(
+        counts=_global_delivery_health_counts(
+            db,
+            model=BackupAlertDelivery,
+            stale_before=stale_before,
+        ),
+        oldest_pending_age_seconds=(
+            _oldest_pending_age_seconds(
+                db,
+                model=BackupAlertDelivery,
+                now=now,
+            )
+        ),
+    )
+
+    agent_lifecycle = NotificationDeliveryOperationalSource(
+        counts=_global_delivery_health_counts(
+            db,
+            model=AgentLifecycleAlertDelivery,
+            stale_before=stale_before,
+        ),
+        oldest_pending_age_seconds=(
+            _oldest_pending_age_seconds(
+                db,
+                model=AgentLifecycleAlertDelivery,
+                now=now,
+            )
+        ),
+    )
+
+    return NotificationDeliveryOperationalSnapshot(
+        observed_at=now,
+        backup=backup,
+        agent_lifecycle=agent_lifecycle,
+    )
