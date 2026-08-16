@@ -50,7 +50,7 @@ jobs:
 
       - name: Run critical lint checks
         run: |
-          ruff check app tests --select E9,F63,F7,F82
+          ruff check app tests --select E9,F401,F63,F7,F811,F82,F841
 
       - name: Run API tests
         run: |
