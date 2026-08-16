@@ -13,6 +13,7 @@ def _settings(**overrides) -> Settings:
         "bootstrap_enabled": False,
         "metrics_bearer_token": "metrics-secret",
         "secure_headers_hsts_enabled": True,
+        "auth_rate_limit_enabled": True,
     }
     values.update(overrides)
     return Settings(**values)
@@ -108,5 +109,18 @@ def test_production_requires_hsts():
         validate_production_security(
             _settings(
                 secure_headers_hsts_enabled=False,
+            )
+        )
+
+
+
+def test_production_requires_auth_rate_limiting():
+    with pytest.raises(
+        RuntimeError,
+        match="AUTH_RATE_LIMIT_ENABLED",
+    ):
+        validate_production_security(
+            _settings(
+                auth_rate_limit_enabled=False,
             )
         )

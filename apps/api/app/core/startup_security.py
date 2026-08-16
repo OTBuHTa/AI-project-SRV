@@ -35,6 +35,11 @@ def validate_production_security(
             "SECURE_HEADERS_HSTS_ENABLED must be true in production"
         )
 
+    if not settings.auth_rate_limit_enabled:
+        errors.append(
+            "AUTH_RATE_LIMIT_ENABLED must be true in production"
+        )
+
     if errors:
         raise RuntimeError(
             "unsafe production security configuration: "
