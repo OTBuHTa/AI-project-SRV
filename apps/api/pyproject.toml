@@ -27,6 +27,9 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+filterwarnings = [
+    "error",
+]
 
 [tool.ruff]
 line-length = 100
