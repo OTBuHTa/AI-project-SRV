@@ -77,3 +77,105 @@ __all__ = [
     "observe_http_request",
     "render_metrics",
 ]
+
+
+from prometheus_client import Gauge
+
+from app.services.notification_delivery_observability import (
+    get_notification_delivery_operational_snapshot,
+)
+
+
+NOTIFICATION_DELIVERIES = Gauge(
+    "srv_notification_deliveries",
+    "Current persisted notification deliveries by source and status.",
+    (
+        "source",
+        "status",
+    ),
+    registry=REGISTRY,
+)
+
+NOTIFICATION_DELIVERY_PROBLEMS = Gauge(
+    "srv_notification_delivery_problems",
+    "Current notification delivery problems by source and classification.",
+    (
+        "source",
+        "problem",
+    ),
+    registry=REGISTRY,
+)
+
+NOTIFICATION_OLDEST_PENDING_AGE = Gauge(
+    "srv_notification_oldest_pending_age_seconds",
+    "Age in seconds of the oldest pending notification delivery.",
+    ("source",),
+    registry=REGISTRY,
+)
+
+NOTIFICATION_METRICS_COLLECTION_SUCCESS = Gauge(
+    "srv_notification_metrics_collection_success",
+    "Whether notification delivery metrics were collected successfully.",
+    registry=REGISTRY,
+)
+
+
+DELIVERY_STATUSES = (
+    "pending",
+    "sending",
+    "delivered",
+    "failed",
+    "canceled",
+)
+
+DELIVERY_PROBLEMS = (
+    "retryable_failed",
+    "exhausted_failed",
+    "stale_sending",
+)
+
+
+def collect_notification_delivery_metrics(db) -> None:
+    snapshot = get_notification_delivery_operational_snapshot(
+        db
+    )
+
+    NOTIFICATION_DELIVERIES.clear()
+    NOTIFICATION_DELIVERY_PROBLEMS.clear()
+    NOTIFICATION_OLDEST_PENDING_AGE.clear()
+
+    for source, data in (
+        ("backup", snapshot.backup),
+        ("agent_lifecycle", snapshot.agent_lifecycle),
+    ):
+        for status in DELIVERY_STATUSES:
+            NOTIFICATION_DELIVERIES.labels(
+                source=source,
+                status=status,
+            ).set(
+                getattr(data.counts, status)
+            )
+
+        for problem in DELIVERY_PROBLEMS:
+            NOTIFICATION_DELIVERY_PROBLEMS.labels(
+                source=source,
+                problem=problem,
+            ).set(
+                getattr(data.counts, problem)
+            )
+
+        NOTIFICATION_OLDEST_PENDING_AGE.labels(
+            source=source,
+        ).set(
+            data.oldest_pending_age_seconds
+        )
+
+    NOTIFICATION_METRICS_COLLECTION_SUCCESS.set(1)
+
+
+def clear_notification_delivery_metrics() -> None:
+    NOTIFICATION_DELIVERIES.clear()
+    NOTIFICATION_DELIVERY_PROBLEMS.clear()
+    NOTIFICATION_OLDEST_PENDING_AGE.clear()
+
+    NOTIFICATION_METRICS_COLLECTION_SUCCESS.set(0)
