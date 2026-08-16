@@ -130,5 +130,5 @@ def probe_backup_storage() -> dict:
             "writable": False,
             "readable": False,
             "healthy": False,
-            "error": str(exc),
+            "error": "backup_storage_unavailable",
         }
