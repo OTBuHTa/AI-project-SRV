@@ -13,4 +13,4 @@ def test_health():
 def test_api_root():
     response = client.get("/api/v1")
     assert response.status_code == 200
-    assert response.json()["version"] == "0.1.26-alpha"
+    assert response.json()["version"] == "0.1.27-alpha"
