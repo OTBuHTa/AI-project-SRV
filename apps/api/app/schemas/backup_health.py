@@ -20,16 +20,6 @@ class BackupCleanupOut(BaseModel):
     deleted_records: int
 
 
-class BackupCleanupRequest(BaseModel):
-    keep_last: int = 7
-    max_age_days: int = 30
-
-
-class BackupCleanupOut(BaseModel):
-    deleted_files: int
-    deleted_records: int
-
-
 class BackupStorageHealthOut(BaseModel):
     backend: str
     root: str
