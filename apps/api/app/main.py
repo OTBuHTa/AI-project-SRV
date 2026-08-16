@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-app = FastAPI(title=settings.app_name, version="0.1.31-alpha", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.1.32-alpha", lifespan=lifespan)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestContextMiddleware)
 app.include_router(health_router)
@@ -94,6 +94,6 @@ app.include_router(inventory_router)
 def api_root():
     return {
         "name": settings.app_name,
-        "version": "0.1.31-alpha",
+        "version": "0.1.32-alpha",
         "phase": "Infrastructure Inventory + Lifecycle",
     }
