@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     notification_webhook_signing_secret: str = ""
     metrics_bearer_token: str = ""
     secure_headers_hsts_enabled: bool = False
+    auth_rate_limit_enabled: bool = False
+    auth_rate_limit_window_seconds: int = 300
+    auth_rate_limit_ip_attempts: int = 20
+    auth_rate_limit_account_attempts: int = 10
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

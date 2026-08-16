@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -23,9 +25,25 @@ from app.schemas.auth import (
     TokenResponse,
 )
 from app.services.audit import append_audit
+from app.services.auth_rate_limit import (
+    clear_login_failures,
+    login_rate_limit_exceeded,
+    record_failed_login,
+)
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 settings = get_settings()
+
+
+def _auth_rate_limit_redis() -> Redis:
+    return Redis.from_url(settings.redis_url)
+
+
+def _login_source_ip(request: Request) -> str:
+    if request.client:
+        return request.client.host
+
+    return "unknown"
 
 
 def _disable_sensitive_response_caching(
@@ -98,15 +116,67 @@ def login(
     response: Response,
     db: Session = Depends(get_db),
 ):
-    user = db.scalar(select(User).where(User.email == str(payload.email).lower()))
+    email = str(payload.email).lower()
+    source_ip = _login_source_ip(request)
+    rate_limit_redis = None
+
+    if settings.auth_rate_limit_enabled:
+        rate_limit_redis = _auth_rate_limit_redis()
+
+        try:
+            limited = login_rate_limit_exceeded(
+                rate_limit_redis,
+                source_ip=source_ip,
+                email=email,
+                ip_limit=(
+                    settings.auth_rate_limit_ip_attempts
+                ),
+                account_limit=(
+                    settings.auth_rate_limit_account_attempts
+                ),
+            )
+        except RedisError:
+            raise HTTPException(
+                status_code=503,
+                detail="authentication_service_unavailable",
+            ) from None
+
+        if limited:
+            raise HTTPException(
+                status_code=429,
+                detail="too_many_login_attempts",
+                headers={"Retry-After": str(
+                    settings.auth_rate_limit_window_seconds
+                )},
+            )
+
+    user = db.scalar(
+        select(User).where(User.email == email)
+    )
     if not user or not verify_password(payload.password, user.password_hash):
+        if rate_limit_redis is not None:
+            try:
+                record_failed_login(
+                    rate_limit_redis,
+                    source_ip=source_ip,
+                    email=email,
+                    window_seconds=(
+                        settings.auth_rate_limit_window_seconds
+                    ),
+                )
+            except RedisError:
+                raise HTTPException(
+                    status_code=503,
+                    detail="authentication_service_unavailable",
+                ) from None
+
         append_audit(
             db,
             action="auth.login",
             result="denied",
             request_id=getattr(request.state, "request_id", None),
             source_ip=request.client.host if request.client else None,
-            details={"email": str(payload.email).lower()},
+            details={"email": email},
         )
         db.commit()
         raise HTTPException(status_code=401, detail="invalid_credentials")
@@ -120,6 +190,19 @@ def login(
         )
         if not membership:
             raise HTTPException(status_code=404, detail="workspace_not_found")
+
+    if rate_limit_redis is not None:
+        try:
+            clear_login_failures(
+                rate_limit_redis,
+                source_ip=source_ip,
+                email=email,
+            )
+        except RedisError:
+            raise HTTPException(
+                status_code=503,
+                detail="authentication_service_unavailable",
+            ) from None
 
     user.last_login_at = datetime.now(UTC)
     tokens = _issue_session(db, user, payload.workspace_id)
