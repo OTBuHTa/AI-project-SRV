@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from app.services.notification_delivery_observability import (
     SOURCE_AGENT_LIFECYCLE,
     SOURCE_BACKUP,
@@ -1186,3 +1188,430 @@ def test_problem_count_respects_problem_filter():
 
     assert "agent_lifecycle_alert_deliveries" in sql
     assert "backup_alert_deliveries" not in sql
+
+
+def test_delivery_cursor_page_uses_stable_global_order():
+    from app.services.notification_delivery_observability import (
+        SOURCE_AGENT_LIFECYCLE,
+        SOURCE_BACKUP,
+        decode_notification_delivery_cursor,
+        list_notification_deliveries_page,
+    )
+
+    db = MagicMock()
+
+    backup_a = delivery(
+        "backup-z",
+        created_at=NOW,
+    )
+    backup_b = delivery(
+        "backup-a",
+        created_at=NOW,
+    )
+    lifecycle = delivery(
+        "lifecycle-z",
+        created_at=NOW,
+    )
+
+    db.scalars.side_effect = [
+        scalar_result([backup_a, backup_b]),
+        scalar_result([lifecycle]),
+    ]
+
+    page = list_notification_deliveries_page(
+        db,
+        workspace_id="workspace-1",
+        limit=2,
+    )
+
+    assert [
+        (item.source, item.id)
+        for item in page.items
+    ] == [
+        (SOURCE_BACKUP, "backup-z"),
+        (SOURCE_BACKUP, "backup-a"),
+    ]
+
+    assert page.has_more is True
+    assert page.next_cursor is not None
+
+    cursor = decode_notification_delivery_cursor(
+        page.next_cursor
+    )
+
+    assert cursor.source == SOURCE_BACKUP
+    assert cursor.id == "backup-a"
+
+    for call in db.scalars.call_args_list:
+        params = call.args[0].compile().params
+        assert 3 in params.values()
+
+
+def test_delivery_cursor_page_does_not_repeat_boundary():
+    from app.services.notification_delivery_observability import (
+        list_notification_deliveries_page,
+    )
+
+    first_db = MagicMock()
+
+    boundary = delivery(
+        "backup-z",
+        created_at=NOW,
+    )
+    older = delivery(
+        "backup-a",
+        created_at=NOW - timedelta(minutes=1),
+    )
+
+    first_db.scalars.side_effect = [
+        scalar_result([boundary, older]),
+        scalar_result([]),
+    ]
+
+    first_page = list_notification_deliveries_page(
+        first_db,
+        workspace_id="workspace-1",
+        limit=1,
+    )
+
+    assert first_page.next_cursor is not None
+    assert first_page.items[0].id == "backup-z"
+
+    second_db = MagicMock()
+    second_db.scalars.side_effect = [
+        scalar_result([boundary, older]),
+        scalar_result([]),
+    ]
+
+    second_page = list_notification_deliveries_page(
+        second_db,
+        workspace_id="workspace-1",
+        cursor=first_page.next_cursor,
+        limit=10,
+    )
+
+    assert [item.id for item in second_page.items] == [
+        "backup-a"
+    ]
+
+
+def test_delivery_cursor_rejects_filter_mismatch():
+    from app.services.notification_delivery_observability import (
+        NotificationDeliveryCursorError,
+        list_notification_deliveries_page,
+    )
+
+    db = MagicMock()
+    db.scalars.side_effect = [
+        scalar_result(
+            [
+                delivery(
+                    "backup-2",
+                    created_at=NOW,
+                ),
+                delivery(
+                    "backup-1",
+                    created_at=NOW - timedelta(minutes=1),
+                ),
+            ]
+        ),
+        scalar_result([]),
+    ]
+
+    page = list_notification_deliveries_page(
+        db,
+        workspace_id="workspace-1",
+        limit=1,
+    )
+
+    assert page.next_cursor is not None
+
+    with pytest.raises(NotificationDeliveryCursorError):
+        list_notification_deliveries_page(
+            MagicMock(),
+            workspace_id="workspace-1",
+            source="backup",
+            cursor=page.next_cursor,
+            limit=1,
+        )
+
+
+def test_delivery_cursor_preserves_source_isolation():
+    from app.services.notification_delivery_observability import (
+        SOURCE_BACKUP,
+        list_notification_deliveries_page,
+    )
+
+    db = MagicMock()
+    db.scalars.return_value = scalar_result(
+        [delivery("backup-1")]
+    )
+
+    page = list_notification_deliveries_page(
+        db,
+        workspace_id="workspace-1",
+        source=SOURCE_BACKUP,
+        limit=10,
+    )
+
+    assert len(page.items) == 1
+    assert page.items[0].source == SOURCE_BACKUP
+    assert db.scalars.call_count == 1
+
+
+def test_problem_cursor_preserves_observation_snapshot():
+    from app.services.notification_delivery_observability import (
+        decode_notification_delivery_cursor,
+        list_notification_delivery_problems_page,
+    )
+
+    first_db = MagicMock()
+
+    failed_new = delivery(
+        "failed-new",
+        status="failed",
+        created_at=NOW,
+    )
+    failed_old = delivery(
+        "failed-old",
+        status="failed",
+        created_at=NOW - timedelta(minutes=1),
+    )
+
+    first_db.scalars.side_effect = [
+        scalar_result([failed_new, failed_old]),
+        scalar_result([]),
+    ]
+
+    first_page = list_notification_delivery_problems_page(
+        first_db,
+        workspace_id="workspace-1",
+        limit=1,
+        now=NOW,
+    )
+
+    assert first_page.has_more is True
+    assert first_page.next_cursor is not None
+    assert first_page.observed_at == NOW
+
+    cursor = decode_notification_delivery_cursor(
+        first_page.next_cursor
+    )
+
+    assert cursor.snapshot_at == NOW
+
+    second_db = MagicMock()
+    second_db.scalars.side_effect = [
+        scalar_result([failed_old]),
+        scalar_result([]),
+    ]
+
+    second_page = list_notification_delivery_problems_page(
+        second_db,
+        workspace_id="workspace-1",
+        cursor=first_page.next_cursor,
+        limit=10,
+        now=NOW + timedelta(hours=1),
+    )
+
+    assert second_page.observed_at == NOW
+    assert [item.id for item in second_page.items] == [
+        "failed-old"
+    ]
+
+
+def test_problem_page_rejects_history_cursor():
+    from app.services.notification_delivery_observability import (
+        NotificationDeliveryCursorError,
+        list_notification_deliveries_page,
+        list_notification_delivery_problems_page,
+    )
+
+    history_db = MagicMock()
+    history_db.scalars.side_effect = [
+        scalar_result(
+            [
+                delivery(
+                    "backup-2",
+                    created_at=NOW,
+                ),
+                delivery(
+                    "backup-1",
+                    created_at=NOW - timedelta(minutes=1),
+                ),
+            ]
+        ),
+        scalar_result([]),
+    ]
+
+    history_page = list_notification_deliveries_page(
+        history_db,
+        workspace_id="workspace-1",
+        limit=1,
+    )
+
+    with pytest.raises(NotificationDeliveryCursorError):
+        list_notification_delivery_problems_page(
+            MagicMock(),
+            workspace_id="workspace-1",
+            cursor=history_page.next_cursor,
+            limit=1,
+            now=NOW,
+        )
+
+
+def test_delivery_cursor_preserves_history_snapshot():
+    from app.services.notification_delivery_observability import (
+        decode_notification_delivery_cursor,
+        list_notification_deliveries_page,
+    )
+
+    first_db = MagicMock()
+
+    first_db.scalars.side_effect = [
+        scalar_result(
+            [
+                delivery(
+                    "backup-2",
+                    created_at=NOW,
+                ),
+                delivery(
+                    "backup-1",
+                    created_at=NOW - timedelta(minutes=1),
+                ),
+            ]
+        ),
+        scalar_result([]),
+    ]
+
+    first_page = list_notification_deliveries_page(
+        first_db,
+        workspace_id="workspace-1",
+        limit=1,
+        now=NOW + timedelta(minutes=5),
+    )
+
+    assert first_page.has_more is True
+    assert first_page.next_cursor is not None
+    assert (
+        first_page.observed_at
+        == NOW + timedelta(minutes=5)
+    )
+
+    cursor = decode_notification_delivery_cursor(
+        first_page.next_cursor
+    )
+
+    assert (
+        cursor.snapshot_at
+        == NOW + timedelta(minutes=5)
+    )
+
+    second_db = MagicMock()
+    second_db.scalars.side_effect = [
+        scalar_result(
+            [
+                delivery(
+                    "backup-1",
+                    created_at=NOW - timedelta(minutes=1),
+                )
+            ]
+        ),
+        scalar_result([]),
+    ]
+
+    second_page = list_notification_deliveries_page(
+        second_db,
+        workspace_id="workspace-1",
+        cursor=first_page.next_cursor,
+        limit=10,
+        now=NOW + timedelta(hours=2),
+    )
+
+    assert (
+        second_page.observed_at
+        == first_page.observed_at
+    )
+    assert [item.id for item in second_page.items] == [
+        "backup-1"
+    ]
+
+
+def test_delivery_cursor_crosses_source_at_same_timestamp():
+    from app.services.notification_delivery_observability import (
+        SOURCE_AGENT_LIFECYCLE,
+        SOURCE_BACKUP,
+        list_notification_deliveries_page,
+    )
+
+    first_db = MagicMock()
+
+    first_db.scalars.side_effect = [
+        scalar_result(
+            [
+                delivery(
+                    "backup-z",
+                    created_at=NOW,
+                ),
+                delivery(
+                    "backup-a",
+                    created_at=NOW,
+                ),
+            ]
+        ),
+        scalar_result(
+            [
+                delivery(
+                    "lifecycle-z",
+                    created_at=NOW,
+                )
+            ]
+        ),
+    ]
+
+    first_page = list_notification_deliveries_page(
+        first_db,
+        workspace_id="workspace-1",
+        limit=2,
+        now=NOW + timedelta(minutes=1),
+    )
+
+    assert [
+        (item.source, item.id)
+        for item in first_page.items
+    ] == [
+        (SOURCE_BACKUP, "backup-z"),
+        (SOURCE_BACKUP, "backup-a"),
+    ]
+
+    assert first_page.next_cursor is not None
+
+    second_db = MagicMock()
+    second_db.scalars.side_effect = [
+        scalar_result([]),
+        scalar_result(
+            [
+                delivery(
+                    "lifecycle-z",
+                    created_at=NOW,
+                )
+            ]
+        ),
+    ]
+
+    second_page = list_notification_deliveries_page(
+        second_db,
+        workspace_id="workspace-1",
+        cursor=first_page.next_cursor,
+        limit=10,
+    )
+
+    assert [
+        (item.source, item.id)
+        for item in second_page.items
+    ] == [
+        (
+            SOURCE_AGENT_LIFECYCLE,
+            "lifecycle-z",
+        )
+    ]

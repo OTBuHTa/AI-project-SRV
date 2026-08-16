@@ -103,6 +103,28 @@ class NotificationDeliveryProblemOut(NotificationDeliveryOut):
     problem: str
 
 
+class NotificationDeliveryPageOut(BaseModel):
+    items: list[NotificationDeliveryOut]
+    next_cursor: str | None
+    has_more: bool
+    observed_at: datetime
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+class NotificationDeliveryProblemPageOut(BaseModel):
+    items: list[NotificationDeliveryProblemOut]
+    next_cursor: str | None
+    has_more: bool
+    observed_at: datetime
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
 class NotificationDeliveryCountOut(BaseModel):
     total: int
     backup: int

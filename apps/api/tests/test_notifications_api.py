@@ -613,3 +613,224 @@ def test_delivery_time_range_rejects_reverse_range():
         exc.value.detail
         == "invalid_notification_delivery_time_range"
     )
+
+
+def test_list_deliveries_page_uses_current_workspace():
+    from app.api.v1.notifications import list_deliveries_page
+
+    db = MagicMock()
+
+    expected = SimpleNamespace(
+        items=[],
+        next_cursor="cursor-next",
+        has_more=True,
+        observed_at=datetime(
+            2026,
+            8,
+            16,
+            tzinfo=timezone.utc,
+        ),
+    )
+
+    with patch(
+        "app.services.notification_delivery_observability."
+        "list_notification_deliveries_page",
+        return_value=expected,
+    ) as page_service:
+        result = list_deliveries_page(
+            source="backup",
+            delivery_status="failed",
+            destination_id="destination-1",
+            channel="webhook",
+            created_from=None,
+            created_to=None,
+            cursor="cursor-current",
+            limit=25,
+            context=context("workspace-1"),
+            db=db,
+        )
+
+    assert result is expected
+
+    page_service.assert_called_once_with(
+        db,
+        workspace_id="workspace-1",
+        source="backup",
+        status="failed",
+        destination_id="destination-1",
+        channel="webhook",
+        created_from=None,
+        created_to=None,
+        cursor="cursor-current",
+        limit=25,
+    )
+
+
+def test_list_deliveries_page_rejects_invalid_cursor():
+    from app.api.v1.notifications import list_deliveries_page
+    from app.services.notification_delivery_observability import (
+        NotificationDeliveryCursorError,
+    )
+
+    db = MagicMock()
+
+    with patch(
+        "app.services.notification_delivery_observability."
+        "list_notification_deliveries_page",
+        side_effect=NotificationDeliveryCursorError(
+            "cursor filter mismatch"
+        ),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            list_deliveries_page(
+                source=None,
+                delivery_status=None,
+                destination_id=None,
+                channel=None,
+                created_from=None,
+                created_to=None,
+                cursor="invalid-cursor",
+                limit=100,
+                context=context("workspace-1"),
+                db=db,
+            )
+
+    assert exc.value.status_code == 400
+    assert (
+        exc.value.detail
+        == "invalid_notification_delivery_cursor"
+    )
+
+
+def test_list_delivery_problems_page_uses_current_workspace():
+    from app.api.v1.notifications import (
+        list_delivery_problems_page,
+    )
+
+    db = MagicMock()
+
+    expected = SimpleNamespace(
+        items=[],
+        next_cursor=None,
+        has_more=False,
+        observed_at=datetime(
+            2026,
+            8,
+            16,
+            tzinfo=timezone.utc,
+        ),
+    )
+
+    with patch(
+        "app.services.notification_delivery_observability."
+        "list_notification_delivery_problems_page",
+        return_value=expected,
+    ) as page_service:
+        result = list_delivery_problems_page(
+            source="agent_lifecycle",
+            problem="retryable_failed",
+            destination_id="destination-1",
+            channel="webhook",
+            created_from=None,
+            created_to=None,
+            cursor="cursor-current",
+            limit=25,
+            context=context("workspace-1"),
+            db=db,
+        )
+
+    assert result is expected
+
+    page_service.assert_called_once_with(
+        db,
+        workspace_id="workspace-1",
+        source="agent_lifecycle",
+        problem="retryable_failed",
+        destination_id="destination-1",
+        channel="webhook",
+        created_from=None,
+        created_to=None,
+        cursor="cursor-current",
+        limit=25,
+    )
+
+
+def test_list_delivery_problems_page_rejects_invalid_problem():
+    from app.api.v1.notifications import (
+        list_delivery_problems_page,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        list_delivery_problems_page(
+            source=None,
+            problem="unknown",
+            destination_id=None,
+            channel=None,
+            created_from=None,
+            created_to=None,
+            cursor=None,
+            limit=100,
+            context=context(),
+            db=MagicMock(),
+        )
+
+    assert exc.value.status_code == 400
+    assert (
+        exc.value.detail
+        == "invalid_notification_delivery_problem"
+    )
+
+
+def test_notification_cursor_page_routes_are_in_openapi():
+    from app.main import app
+
+    schema = app.openapi()
+    paths = schema["paths"]
+
+    assert (
+        "/api/v1/notifications/deliveries/page"
+        in paths
+    )
+    assert (
+        "/api/v1/notifications/deliveries/problems/page"
+        in paths
+    )
+
+    history = paths[
+        "/api/v1/notifications/deliveries/page"
+    ]["get"]
+
+    problems = paths[
+        "/api/v1/notifications/deliveries/problems/page"
+    ]["get"]
+
+    history_params = {
+        parameter["name"]
+        for parameter in history["parameters"]
+    }
+    problem_params = {
+        parameter["name"]
+        for parameter in problems["parameters"]
+    }
+
+    assert {
+        "source",
+        "status",
+        "destination_id",
+        "channel",
+        "created_from",
+        "created_to",
+        "cursor",
+        "limit",
+    }.issubset(history_params)
+
+    assert {
+        "source",
+        "problem",
+        "destination_id",
+        "channel",
+        "created_from",
+        "created_to",
+        "cursor",
+        "limit",
+    }.issubset(problem_params)

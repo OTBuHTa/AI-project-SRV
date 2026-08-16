@@ -1,7 +1,10 @@
+import base64
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.core import (
@@ -734,4 +737,640 @@ def get_notification_delivery_problem_count(
         total=backup + agent_lifecycle,
         backup=backup,
         agent_lifecycle=agent_lifecycle,
+    )
+
+CURSOR_VERSION = 1
+CURSOR_SCOPE_HISTORY = "history"
+CURSOR_SCOPE_PROBLEMS = "problems"
+
+VALID_CURSOR_SCOPES = {
+    CURSOR_SCOPE_HISTORY,
+    CURSOR_SCOPE_PROBLEMS,
+}
+
+
+class NotificationDeliveryCursorError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class NotificationDeliveryCursor:
+    scope: str
+    created_at: datetime
+    source: str
+    id: str
+    filter_hash: str
+    snapshot_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class NotificationDeliveryPage:
+    items: list[NotificationDeliveryRecord]
+    next_cursor: str | None
+    has_more: bool
+    observed_at: datetime
+
+
+@dataclass(frozen=True)
+class NotificationDeliveryProblemPage:
+    items: list[NotificationDeliveryProblemRecord]
+    next_cursor: str | None
+    has_more: bool
+    observed_at: datetime
+
+
+def _normalized_cursor_datetime(value: datetime) -> datetime:
+    if value.utcoffset() is None:
+        raise NotificationDeliveryCursorError(
+            "cursor datetime must be timezone-aware"
+        )
+
+    return value.astimezone(timezone.utc)
+
+
+def _cursor_datetime_text(value: datetime) -> str:
+    return _normalized_cursor_datetime(value).isoformat()
+
+
+def _filter_value(value):
+    if isinstance(value, datetime):
+        return _cursor_datetime_text(value)
+
+    return value
+
+
+def _delivery_filter_hash(
+    scope: str,
+    **filters,
+) -> str:
+    payload = {
+        "scope": scope,
+        "filters": {
+            key: _filter_value(filters[key])
+            for key in sorted(filters)
+        },
+    }
+
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def encode_notification_delivery_cursor(
+    cursor: NotificationDeliveryCursor,
+) -> str:
+    if cursor.scope not in VALID_CURSOR_SCOPES:
+        raise NotificationDeliveryCursorError(
+            "invalid cursor scope"
+        )
+
+    if cursor.source not in VALID_SOURCES:
+        raise NotificationDeliveryCursorError(
+            "invalid cursor source"
+        )
+
+    if not cursor.id:
+        raise NotificationDeliveryCursorError(
+            "invalid cursor id"
+        )
+
+    if len(cursor.filter_hash) != 64:
+        raise NotificationDeliveryCursorError(
+            "invalid cursor filter hash"
+        )
+
+    payload = {
+        "v": CURSOR_VERSION,
+        "scope": cursor.scope,
+        "created_at": _cursor_datetime_text(
+            cursor.created_at
+        ),
+        "source": cursor.source,
+        "id": cursor.id,
+        "filter_hash": cursor.filter_hash,
+        "snapshot_at": (
+            _cursor_datetime_text(cursor.snapshot_at)
+            if cursor.snapshot_at is not None
+            else None
+        ),
+    }
+
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    return base64.urlsafe_b64encode(encoded).decode(
+        "ascii"
+    ).rstrip("=")
+
+
+def _parse_cursor_datetime(
+    value,
+    *,
+    field: str,
+) -> datetime:
+    if not isinstance(value, str):
+        raise NotificationDeliveryCursorError(
+            f"invalid cursor {field}"
+        )
+
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise NotificationDeliveryCursorError(
+            f"invalid cursor {field}"
+        ) from exc
+
+    return _normalized_cursor_datetime(parsed)
+
+
+def decode_notification_delivery_cursor(
+    value: str,
+) -> NotificationDeliveryCursor:
+    if not value or len(value) > 4096:
+        raise NotificationDeliveryCursorError(
+            "invalid notification delivery cursor"
+        )
+
+    try:
+        padding = "=" * (-len(value) % 4)
+        raw = base64.b64decode(
+            value + padding,
+            altchars=b"-_",
+            validate=True,
+        )
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        raise NotificationDeliveryCursorError(
+            "invalid notification delivery cursor"
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise NotificationDeliveryCursorError(
+            "invalid notification delivery cursor"
+        )
+
+    if payload.get("v") != CURSOR_VERSION:
+        raise NotificationDeliveryCursorError(
+            "unsupported cursor version"
+        )
+
+    scope = payload.get("scope")
+    source = payload.get("source")
+    delivery_id = payload.get("id")
+    filter_hash = payload.get("filter_hash")
+
+    if scope not in VALID_CURSOR_SCOPES:
+        raise NotificationDeliveryCursorError(
+            "invalid cursor scope"
+        )
+
+    if source not in VALID_SOURCES:
+        raise NotificationDeliveryCursorError(
+            "invalid cursor source"
+        )
+
+    if not isinstance(delivery_id, str) or not delivery_id:
+        raise NotificationDeliveryCursorError(
+            "invalid cursor id"
+        )
+
+    if (
+        not isinstance(filter_hash, str)
+        or len(filter_hash) != 64
+    ):
+        raise NotificationDeliveryCursorError(
+            "invalid cursor filter hash"
+        )
+
+    snapshot_raw = payload.get("snapshot_at")
+
+    snapshot_at = (
+        _parse_cursor_datetime(
+            snapshot_raw,
+            field="snapshot_at",
+        )
+        if snapshot_raw is not None
+        else None
+    )
+
+    return NotificationDeliveryCursor(
+        scope=scope,
+        created_at=_parse_cursor_datetime(
+            payload.get("created_at"),
+            field="created_at",
+        ),
+        source=source,
+        id=delivery_id,
+        filter_hash=filter_hash,
+        snapshot_at=snapshot_at,
+    )
+
+
+def _delivery_sort_key(record):
+    return (
+        record.created_at,
+        record.source,
+        record.id,
+    )
+
+
+def _record_is_after_cursor(
+    record,
+    cursor: NotificationDeliveryCursor,
+) -> bool:
+    return _delivery_sort_key(record) < (
+        cursor.created_at,
+        cursor.source,
+        cursor.id,
+    )
+
+
+def _delivery_cursor_condition(
+    model,
+    *,
+    source_name: str,
+    cursor: NotificationDeliveryCursor,
+):
+    older_created = (
+        model.created_at < cursor.created_at
+    )
+
+    if source_name < cursor.source:
+        return or_(
+            older_created,
+            model.created_at == cursor.created_at,
+        )
+
+    if source_name == cursor.source:
+        return or_(
+            older_created,
+            (
+                (model.created_at == cursor.created_at)
+                & (model.id < cursor.id)
+            ),
+        )
+
+    return older_created
+
+
+def _validate_page_cursor(
+    cursor_value: str | None,
+    *,
+    scope: str,
+    filter_hash: str,
+) -> NotificationDeliveryCursor | None:
+    if cursor_value is None:
+        return None
+
+    cursor = decode_notification_delivery_cursor(
+        cursor_value
+    )
+
+    if cursor.scope != scope:
+        raise NotificationDeliveryCursorError(
+            "cursor scope mismatch"
+        )
+
+    if cursor.filter_hash != filter_hash:
+        raise NotificationDeliveryCursorError(
+            "cursor filter mismatch"
+        )
+
+    return cursor
+
+
+def list_notification_deliveries_page(
+    db: Session,
+    *,
+    workspace_id: str,
+    source: str | None = None,
+    status: str | None = None,
+    destination_id: str | None = None,
+    channel: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    cursor: str | None = None,
+    limit: int = 100,
+    now: datetime | None = None,
+) -> NotificationDeliveryPage:
+    if limit < 1:
+        raise ValueError("limit must be positive")
+
+    filter_hash = _delivery_filter_hash(
+        CURSOR_SCOPE_HISTORY,
+        workspace_id=workspace_id,
+        source=source,
+        status=status,
+        destination_id=destination_id,
+        channel=channel,
+        created_from=created_from,
+        created_to=created_to,
+    )
+
+    decoded_cursor = _validate_page_cursor(
+        cursor,
+        scope=CURSOR_SCOPE_HISTORY,
+        filter_hash=filter_hash,
+    )
+
+    if decoded_cursor is not None:
+        if decoded_cursor.snapshot_at is None:
+            raise NotificationDeliveryCursorError(
+                "history cursor missing snapshot"
+            )
+
+        observed_at = decoded_cursor.snapshot_at
+    else:
+        observed_at = now or datetime.now(timezone.utc)
+        observed_at = _normalized_cursor_datetime(
+            observed_at
+        )
+
+    records: list[NotificationDeliveryRecord] = []
+
+    def load(model, source_name: str) -> None:
+        statement = select(model).where(
+            model.workspace_id == workspace_id
+        )
+
+        if status is not None:
+            statement = statement.where(
+                model.status == status
+            )
+
+        if destination_id is not None:
+            statement = statement.where(
+                model.destination_id == destination_id
+            )
+
+        if channel is not None:
+            statement = statement.where(
+                model.channel == channel
+            )
+
+        if created_from is not None:
+            statement = statement.where(
+                model.created_at >= created_from
+            )
+
+        if created_to is not None:
+            statement = statement.where(
+                model.created_at <= created_to
+            )
+
+        statement = statement.where(
+            model.created_at <= observed_at
+        )
+
+        if decoded_cursor is not None:
+            statement = statement.where(
+                _delivery_cursor_condition(
+                    model,
+                    source_name=source_name,
+                    cursor=decoded_cursor,
+                )
+            )
+
+        statement = (
+            statement
+            .order_by(
+                model.created_at.desc(),
+                model.id.desc(),
+            )
+            .limit(limit + 1)
+        )
+
+        for delivery in db.scalars(statement).all():
+            record = _record(
+                delivery,
+                source=source_name,
+            )
+
+            if (
+                decoded_cursor is None
+                or _record_is_after_cursor(
+                    record,
+                    decoded_cursor,
+                )
+            ):
+                records.append(record)
+
+    if source in (None, SOURCE_BACKUP):
+        load(
+            BackupAlertDelivery,
+            SOURCE_BACKUP,
+        )
+
+    if source in (None, SOURCE_AGENT_LIFECYCLE):
+        load(
+            AgentLifecycleAlertDelivery,
+            SOURCE_AGENT_LIFECYCLE,
+        )
+
+    records.sort(
+        key=_delivery_sort_key,
+        reverse=True,
+    )
+
+    items = records[:limit]
+    has_more = len(records) > limit
+
+    next_cursor = None
+
+    if has_more and items:
+        last = items[-1]
+
+        next_cursor = encode_notification_delivery_cursor(
+            NotificationDeliveryCursor(
+                scope=CURSOR_SCOPE_HISTORY,
+                created_at=last.created_at,
+                source=last.source,
+                id=last.id,
+                filter_hash=filter_hash,
+                snapshot_at=observed_at,
+            )
+        )
+
+    return NotificationDeliveryPage(
+        items=items,
+        next_cursor=next_cursor,
+        has_more=has_more,
+        observed_at=observed_at,
+    )
+
+
+def list_notification_delivery_problems_page(
+    db: Session,
+    *,
+    workspace_id: str,
+    source: str | None = None,
+    problem: str | None = None,
+    destination_id: str | None = None,
+    channel: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    cursor: str | None = None,
+    limit: int = 100,
+    now: datetime | None = None,
+) -> NotificationDeliveryProblemPage:
+    if limit < 1:
+        raise ValueError("limit must be positive")
+
+    filter_hash = _delivery_filter_hash(
+        CURSOR_SCOPE_PROBLEMS,
+        workspace_id=workspace_id,
+        source=source,
+        problem=problem,
+        destination_id=destination_id,
+        channel=channel,
+        created_from=created_from,
+        created_to=created_to,
+    )
+
+    decoded_cursor = _validate_page_cursor(
+        cursor,
+        scope=CURSOR_SCOPE_PROBLEMS,
+        filter_hash=filter_hash,
+    )
+
+    if decoded_cursor is not None:
+        if decoded_cursor.snapshot_at is None:
+            raise NotificationDeliveryCursorError(
+                "problem cursor missing snapshot"
+            )
+
+        observed_at = decoded_cursor.snapshot_at
+    else:
+        observed_at = now or datetime.now(timezone.utc)
+        observed_at = _normalized_cursor_datetime(
+            observed_at
+        )
+
+    stale_before = observed_at - timedelta(
+        seconds=CLAIM_TIMEOUT_SECONDS
+    )
+
+    records: list[
+        NotificationDeliveryProblemRecord
+    ] = []
+
+    def load(model, source_name: str) -> None:
+        statement = select(model).where(
+            model.workspace_id == workspace_id,
+            _problem_query_condition(
+                model,
+                problem=problem,
+                stale_before=stale_before,
+            ),
+        )
+
+        if destination_id is not None:
+            statement = statement.where(
+                model.destination_id == destination_id
+            )
+
+        if channel is not None:
+            statement = statement.where(
+                model.channel == channel
+            )
+
+        if created_from is not None:
+            statement = statement.where(
+                model.created_at >= created_from
+            )
+
+        if created_to is not None:
+            statement = statement.where(
+                model.created_at <= created_to
+            )
+
+        if decoded_cursor is not None:
+            statement = statement.where(
+                _delivery_cursor_condition(
+                    model,
+                    source_name=source_name,
+                    cursor=decoded_cursor,
+                )
+            )
+
+        statement = (
+            statement
+            .order_by(
+                model.created_at.desc(),
+                model.id.desc(),
+            )
+            .limit(limit + 1)
+        )
+
+        for delivery in db.scalars(statement).all():
+            record = _problem_record(
+                delivery,
+                source=source_name,
+                now=observed_at,
+            )
+
+            if (
+                record is not None
+                and (
+                    problem is None
+                    or record.problem == problem
+                )
+                and (
+                    decoded_cursor is None
+                    or _record_is_after_cursor(
+                        record,
+                        decoded_cursor,
+                    )
+                )
+            ):
+                records.append(record)
+
+    if source in (None, SOURCE_BACKUP):
+        load(
+            BackupAlertDelivery,
+            SOURCE_BACKUP,
+        )
+
+    if source in (None, SOURCE_AGENT_LIFECYCLE):
+        load(
+            AgentLifecycleAlertDelivery,
+            SOURCE_AGENT_LIFECYCLE,
+        )
+
+    records.sort(
+        key=_delivery_sort_key,
+        reverse=True,
+    )
+
+    items = records[:limit]
+    has_more = len(records) > limit
+
+    next_cursor = None
+
+    if has_more and items:
+        last = items[-1]
+
+        next_cursor = encode_notification_delivery_cursor(
+            NotificationDeliveryCursor(
+                scope=CURSOR_SCOPE_PROBLEMS,
+                created_at=last.created_at,
+                source=last.source,
+                id=last.id,
+                filter_hash=filter_hash,
+                snapshot_at=observed_at,
+            )
+        )
+
+    return NotificationDeliveryProblemPage(
+        items=items,
+        next_cursor=next_cursor,
+        has_more=has_more,
+        observed_at=observed_at,
     )

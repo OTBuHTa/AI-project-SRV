@@ -794,6 +794,12 @@ class AgentLifecycleAlertDelivery(Base):
     )
 
     __table_args__ = (
+        Index(
+            "ix_agent_lifecycle_deliveries_workspace_created_id",
+            "workspace_id",
+            "created_at",
+            "id",
+        ),
         UniqueConstraint(
             "alert_event_id",
             "destination_id",
@@ -893,6 +899,12 @@ class BackupAlertDelivery(Base):
     )
 
     __table_args__ = (
+        Index(
+            "ix_backup_alert_deliveries_workspace_created_id",
+            "workspace_id",
+            "created_at",
+            "id",
+        ),
         UniqueConstraint(
             "alert_event_id",
             "destination_id",
