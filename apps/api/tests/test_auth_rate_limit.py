@@ -3,7 +3,7 @@ from unittest.mock import Mock
 from app.services.auth_rate_limit import (
     _account_key,
     _ip_key,
-    clear_login_failures,
+    clear_account_login_failures,
     login_rate_limit_exceeded,
     record_failed_login,
 )
@@ -76,19 +76,19 @@ def test_failed_login_records_ip_and_account():
     assert pipeline.execute.call_count == 2
 
 
-def test_success_clears_ip_and_account_failures():
+def test_success_clears_only_account_failures():
     redis = Mock()
 
-    clear_login_failures(
+    clear_account_login_failures(
         redis,
-        source_ip="192.0.2.10",
         email="user@example.com",
     )
 
-    redis.delete.assert_called_once()
+    redis.delete.assert_called_once_with(
+        _account_key("user@example.com")
+    )
 
-    keys = redis.delete.call_args.args
+    deleted_key = redis.delete.call_args.args[0]
 
-    assert len(keys) == 2
-    assert "192.0.2.10" not in keys[0]
-    assert "user@example.com" not in keys[1]
+    assert deleted_key != _ip_key("192.0.2.10")
+    assert "user@example.com" not in deleted_key

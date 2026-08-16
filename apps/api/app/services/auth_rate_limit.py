@@ -93,13 +93,11 @@ def record_failed_login(
     )
 
 
-def clear_login_failures(
+def clear_account_login_failures(
     redis: Redis,
     *,
-    source_ip: str,
     email: str,
 ) -> None:
     redis.delete(
-        _ip_key(source_ip),
         _account_key(email),
     )
