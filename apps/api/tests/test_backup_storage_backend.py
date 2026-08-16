@@ -60,3 +60,30 @@ def test_storage_health_probe(monkeypatch, tmp_path: Path):
     assert result["healthy"] is True
     assert result["readable"] is True
     assert result["writable"] is True
+
+
+def test_storage_health_probe_does_not_expose_os_error(
+    monkeypatch,
+    tmp_path: Path,
+):
+    from unittest.mock import patch
+
+    from app.services.backup_storage import probe_backup_storage
+
+    monkeypatch.setenv("BACKUP_STORAGE_BACKEND", "local")
+    monkeypatch.setenv("BACKUP_STORAGE_ROOT", str(tmp_path))
+
+    secret = "SECRET_PATH_DO_NOT_EXPOSE"
+
+    with patch.object(
+        Path,
+        "write_text",
+        side_effect=OSError(secret),
+    ):
+        result = probe_backup_storage()
+
+    assert result["healthy"] is False
+    assert result["readable"] is False
+    assert result["writable"] is False
+    assert result["error"] == "backup_storage_unavailable"
+    assert secret not in str(result)

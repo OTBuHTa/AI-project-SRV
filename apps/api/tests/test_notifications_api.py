@@ -176,7 +176,7 @@ def test_create_destination_rejects_unsafe_endpoint():
         )
 
     assert exc.value.status_code == 400
-    assert "link-local" in exc.value.detail
+    assert exc.value.detail == "invalid_notification_endpoint"
     db.add.assert_not_called()
 
 
@@ -834,3 +834,36 @@ def test_notification_cursor_page_routes_are_in_openapi():
         "cursor",
         "limit",
     }.issubset(problem_params)
+
+
+
+def test_create_destination_does_not_expose_policy_exception():
+    from app.services.notification_endpoint_policy import (
+        NotificationEndpointPolicyError,
+    )
+
+    db = MagicMock()
+
+    payload = NotificationDestinationCreate(
+        name="operations",
+        channel="webhook",
+        endpoint="https://example.com/hook",
+    )
+
+    with patch(
+        "app.api.v1.notifications.validate_notification_endpoint",
+        side_effect=NotificationEndpointPolicyError(
+            "SECRET_DO_NOT_EXPOSE"
+        ),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            create_notification_destination(
+                payload,
+                context=context("workspace-1"),
+                db=db,
+            )
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "invalid_notification_endpoint"
+    assert "SECRET_DO_NOT_EXPOSE" not in str(exc.value.detail)
+    db.add.assert_not_called()

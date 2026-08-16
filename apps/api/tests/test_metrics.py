@@ -426,3 +426,85 @@ def test_worker_metrics_collection_failure_is_visible(
         "srv_worker_metrics_collection_success 0.0"
         in response.text
     )
+
+
+def test_metrics_requires_configured_bearer_token(
+    monkeypatch,
+):
+    import app.api.metrics as metrics_api
+
+    monkeypatch.setattr(
+        metrics_api.settings,
+        "metrics_bearer_token",
+        "metrics-secret",
+    )
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": "metrics_authentication_required"
+    }
+    assert response.headers["www-authenticate"] == "Bearer"
+
+
+def test_metrics_rejects_invalid_bearer_token(
+    monkeypatch,
+):
+    import app.api.metrics as metrics_api
+
+    monkeypatch.setattr(
+        metrics_api.settings,
+        "metrics_bearer_token",
+        "metrics-secret",
+    )
+
+    response = client.get(
+        "/metrics",
+        headers={
+            "Authorization": "Bearer wrong-secret",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": "metrics_authentication_required"
+    }
+
+
+def test_metrics_accepts_configured_bearer_token(
+    monkeypatch,
+):
+    import app.api.metrics as metrics_api
+
+    monkeypatch.setattr(
+        metrics_api.settings,
+        "metrics_bearer_token",
+        "metrics-secret",
+    )
+
+    response = client.get(
+        "/metrics",
+        headers={
+            "Authorization": "Bearer metrics-secret",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "srv_http_requests_total" in response.text
+
+
+def test_metrics_remains_open_when_token_not_configured(
+    monkeypatch,
+):
+    import app.api.metrics as metrics_api
+
+    monkeypatch.setattr(
+        metrics_api.settings,
+        "metrics_bearer_token",
+        "",
+    )
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200

@@ -16,7 +16,9 @@ from app.api.v1.actions import router as actions_router
 from app.api.v1.ai_actions import router as ai_actions_router
 from app.api.v1.workspaces import router as workspaces_router
 from app.core.config import get_settings
+from app.core.startup_security import validate_production_security
 from app.middleware.request_context import RequestContextMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.db.session import SessionLocal
 from app.services.agent_status import evaluate_agent_statuses
 from app.services.agent_token_lifecycle import cleanup_expired_pending_rotations
@@ -58,6 +60,7 @@ async def _status_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_production_security(settings)
     task = asyncio.create_task(_status_loop())
     try:
         yield
@@ -68,7 +71,8 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-app = FastAPI(title=settings.app_name, version="0.1.25-alpha", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.1.26-alpha", lifespan=lifespan)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestContextMiddleware)
 app.include_router(health_router)
 app.include_router(metrics_router)
@@ -90,6 +94,6 @@ app.include_router(inventory_router)
 def api_root():
     return {
         "name": settings.app_name,
-        "version": "0.1.25-alpha",
+        "version": "0.1.26-alpha",
         "phase": "Infrastructure Inventory + Lifecycle",
     }
