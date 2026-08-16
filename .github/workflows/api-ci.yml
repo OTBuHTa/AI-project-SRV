@@ -48,6 +48,10 @@ jobs:
         run: |
           python -m compileall -q app tests
 
+      - name: Run critical lint checks
+        run: |
+          ruff check app tests --select E9,F63,F7,F82
+
       - name: Run API tests
         run: |
           pytest -q
