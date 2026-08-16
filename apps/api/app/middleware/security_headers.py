@@ -1,6 +1,11 @@
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+from app.core.config import get_settings
+
+
+settings = get_settings()
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -26,5 +31,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "geolocation=()"
             ),
         )
+
+        if settings.secure_headers_hsts_enabled:
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
 
         return response

@@ -52,3 +52,34 @@ def test_unmatched_route_has_security_headers():
 
     assert response.status_code == 404
     _assert_security_headers(response)
+
+
+def test_hsts_is_disabled_by_default(monkeypatch):
+    import app.middleware.security_headers as security_headers
+
+    monkeypatch.setattr(
+        security_headers.settings,
+        "secure_headers_hsts_enabled",
+        False,
+    )
+
+    response = client.get("/health")
+
+    assert "strict-transport-security" not in response.headers
+
+
+def test_hsts_is_emitted_when_enabled(monkeypatch):
+    import app.middleware.security_headers as security_headers
+
+    monkeypatch.setattr(
+        security_headers.settings,
+        "secure_headers_hsts_enabled",
+        True,
+    )
+
+    response = client.get("/health")
+
+    assert (
+        response.headers["strict-transport-security"]
+        == "max-age=31536000; includeSubDomains"
+    )

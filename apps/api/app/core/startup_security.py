@@ -30,6 +30,11 @@ def validate_production_security(
             "METRICS_BEARER_TOKEN must be configured in production"
         )
 
+    if not settings.secure_headers_hsts_enabled:
+        errors.append(
+            "SECURE_HEADERS_HSTS_ENABLED must be true in production"
+        )
+
     if errors:
         raise RuntimeError(
             "unsafe production security configuration: "

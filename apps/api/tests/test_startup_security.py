@@ -12,6 +12,7 @@ def _settings(**overrides) -> Settings:
         "jwt_secret": "strong-production-secret",
         "bootstrap_enabled": False,
         "metrics_bearer_token": "metrics-secret",
+        "secure_headers_hsts_enabled": True,
     }
     values.update(overrides)
     return Settings(**values)
@@ -96,3 +97,16 @@ def test_production_reports_all_security_errors():
     assert "JWT_SECRET" in message
     assert "BOOTSTRAP_ENABLED" in message
     assert "METRICS_BEARER_TOKEN" in message
+
+
+
+def test_production_requires_hsts():
+    with pytest.raises(
+        RuntimeError,
+        match="SECURE_HEADERS_HSTS_ENABLED",
+    ):
+        validate_production_security(
+            _settings(
+                secure_headers_hsts_enabled=False,
+            )
+        )

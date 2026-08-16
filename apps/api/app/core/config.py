@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     notification_webhook_allow_private_networks: bool = False
     notification_webhook_signing_secret: str = ""
     metrics_bearer_token: str = ""
+    secure_headers_hsts_enabled: bool = False
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
