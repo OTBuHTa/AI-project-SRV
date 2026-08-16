@@ -40,6 +40,20 @@ def validate_production_security(
             "AUTH_RATE_LIMIT_ENABLED must be true in production"
         )
 
+    forwarded_allow_ips = settings.forwarded_allow_ips.strip()
+
+    if not forwarded_allow_ips:
+        errors.append(
+            "FORWARDED_ALLOW_IPS must explicitly identify trusted proxies"
+        )
+    elif "*" in {
+        value.strip()
+        for value in forwarded_allow_ips.split(",")
+    }:
+        errors.append(
+            "FORWARDED_ALLOW_IPS must not trust all clients in production"
+        )
+
     if errors:
         raise RuntimeError(
             "unsafe production security configuration: "

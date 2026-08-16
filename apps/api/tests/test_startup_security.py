@@ -14,6 +14,7 @@ def _settings(**overrides) -> Settings:
         "metrics_bearer_token": "metrics-secret",
         "secure_headers_hsts_enabled": True,
         "auth_rate_limit_enabled": True,
+        "forwarded_allow_ips": "172.20.0.10",
     }
     values.update(overrides)
     return Settings(**values)
@@ -124,3 +125,50 @@ def test_production_requires_auth_rate_limiting():
                 auth_rate_limit_enabled=False,
             )
         )
+
+
+
+def test_production_requires_explicit_trusted_proxy():
+    with pytest.raises(
+        RuntimeError,
+        match="FORWARDED_ALLOW_IPS",
+    ):
+        validate_production_security(
+            _settings(
+                forwarded_allow_ips="",
+            )
+        )
+
+
+def test_production_rejects_forwarded_allow_all():
+    with pytest.raises(
+        RuntimeError,
+        match="FORWARDED_ALLOW_IPS",
+    ):
+        validate_production_security(
+            _settings(
+                forwarded_allow_ips="*",
+            )
+        )
+
+
+def test_production_rejects_wildcard_in_proxy_list():
+    with pytest.raises(
+        RuntimeError,
+        match="FORWARDED_ALLOW_IPS",
+    ):
+        validate_production_security(
+            _settings(
+                forwarded_allow_ips=(
+                    "172.20.0.10,*"
+                ),
+            )
+        )
+
+
+def test_production_accepts_explicit_proxy_network():
+    validate_production_security(
+        _settings(
+            forwarded_allow_ips="172.20.0.0/24",
+        )
+    )
