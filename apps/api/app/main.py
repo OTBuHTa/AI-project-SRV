@@ -18,6 +18,7 @@ from app.api.v1.workspaces import router as workspaces_router
 from app.core.config import get_settings
 from app.core.startup_security import validate_production_security
 from app.middleware.request_context import RequestContextMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.db.session import SessionLocal
 from app.services.agent_status import evaluate_agent_statuses
 from app.services.agent_token_lifecycle import cleanup_expired_pending_rotations
@@ -71,6 +72,7 @@ async def lifespan(app: FastAPI):
             pass
 
 app = FastAPI(title=settings.app_name, version="0.1.25-alpha", lifespan=lifespan)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestContextMiddleware)
 app.include_router(health_router)
 app.include_router(metrics_router)
