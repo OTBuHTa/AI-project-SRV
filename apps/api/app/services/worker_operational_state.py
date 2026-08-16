@@ -145,3 +145,52 @@ def list_worker_operational_states(
             )
         ).all()
     )
+
+
+def persist_worker_started(
+    *,
+    worker_name: str,
+    session_factory,
+    now: datetime | None = None,
+) -> None:
+    with session_factory() as db:
+        mark_worker_started(
+            db,
+            worker_name=worker_name,
+            now=now,
+        )
+        db.commit()
+
+
+def persist_worker_succeeded(
+    *,
+    worker_name: str,
+    processed_count: int,
+    session_factory,
+    now: datetime | None = None,
+) -> None:
+    with session_factory() as db:
+        mark_worker_succeeded(
+            db,
+            worker_name=worker_name,
+            processed_count=processed_count,
+            now=now,
+        )
+        db.commit()
+
+
+def persist_worker_failed(
+    *,
+    worker_name: str,
+    error: object,
+    session_factory,
+    now: datetime | None = None,
+) -> None:
+    with session_factory() as db:
+        mark_worker_failed(
+            db,
+            worker_name=worker_name,
+            error=error,
+            now=now,
+        )
+        db.commit()

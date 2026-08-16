@@ -19,6 +19,12 @@ from app.services.backup_alert_delivery_transport import (
 from app.services.notification_endpoint_policy import (
     validate_notification_endpoint,
 )
+from app.services.worker_operational_state import (
+    WORKER_BACKUP_ALERT_DELIVERY,
+    persist_worker_failed,
+    persist_worker_started,
+    persist_worker_succeeded,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -148,14 +154,59 @@ def run_once() -> int:
 
     return processed
 
+def _record_started() -> None:
+    try:
+        persist_worker_started(
+            worker_name=WORKER_BACKUP_ALERT_DELIVERY,
+            session_factory=SessionLocal,
+        )
+    except Exception:
+        logger.exception(
+            "backup delivery observability start write failed"
+        )
+
+
+def _record_succeeded(processed: int) -> None:
+    try:
+        persist_worker_succeeded(
+            worker_name=WORKER_BACKUP_ALERT_DELIVERY,
+            processed_count=processed,
+            session_factory=SessionLocal,
+        )
+    except Exception:
+        logger.exception(
+            "backup delivery observability success write failed"
+        )
+
+
+def _record_failed(error: object) -> None:
+    try:
+        persist_worker_failed(
+            worker_name=WORKER_BACKUP_ALERT_DELIVERY,
+            error=error,
+            session_factory=SessionLocal,
+        )
+    except Exception:
+        logger.exception(
+            "backup delivery observability failure write failed"
+        )
+
+
 def run_forever() -> None:
     logger.info("backup alert delivery worker started")
 
     while True:
+        _record_started()
+
         try:
-            run_once()
-        except Exception:
-            logger.exception("backup alert delivery iteration failed")
+            processed = run_once()
+        except Exception as exc:
+            _record_failed(exc)
+            logger.exception(
+                "backup alert delivery iteration failed"
+            )
+        else:
+            _record_succeeded(processed)
 
         time.sleep(POLL_INTERVAL_SECONDS)
 
