@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,13 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 settings = get_settings()
 
 
+def _disable_sensitive_response_caching(
+    response: Response,
+) -> None:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+
+
 def _issue_session(db: Session, user: User, workspace_id=None) -> TokenResponse:
     raw_refresh, token_hash = new_refresh_token()
     expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_days)
@@ -40,7 +47,12 @@ def _issue_session(db: Session, user: User, workspace_id=None) -> TokenResponse:
 
 
 @router.post("/bootstrap", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def bootstrap(payload: BootstrapRequest, request: Request, db: Session = Depends(get_db)):
+def bootstrap(
+    payload: BootstrapRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     if not settings.bootstrap_enabled:
         raise HTTPException(status_code=404, detail="not_found")
     if db.scalar(select(func.count()).select_from(User)) > 0:
@@ -75,11 +87,17 @@ def bootstrap(payload: BootstrapRequest, request: Request, db: Session = Depends
         source_ip=request.client.host if request.client else None,
     )
     db.commit()
+    _disable_sensitive_response_caching(response)
     return tokens
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+def login(
+    payload: LoginRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     user = db.scalar(select(User).where(User.email == str(payload.email).lower()))
     if not user or not verify_password(payload.password, user.password_hash):
         append_audit(
@@ -114,11 +132,16 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         source_ip=request.client.host if request.client else None,
     )
     db.commit()
+    _disable_sensitive_response_caching(response)
     return tokens
 
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
+def refresh(
+    payload: RefreshRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     token_hash = hash_refresh_token(payload.refresh_token)
     session = db.scalar(select(RefreshSession).where(RefreshSession.token_hash == token_hash))
     if not session or session.revoked_at or session.expires_at <= datetime.now(UTC):
@@ -139,6 +162,7 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     session.revoked_at = datetime.now(UTC)
     tokens = _issue_session(db, user, payload.workspace_id)
     db.commit()
+    _disable_sensitive_response_caching(response)
     return tokens
 
 
