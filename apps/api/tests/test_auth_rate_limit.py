@@ -2,6 +2,7 @@ from unittest.mock import Mock
 
 from app.services.auth_rate_limit import (
     _account_key,
+    account_fingerprint,
     _ip_key,
     clear_account_login_failures,
     login_rate_limit_exceeded,
@@ -92,3 +93,17 @@ def test_success_clears_only_account_failures():
 
     assert deleted_key != _ip_key("192.0.2.10")
     assert "user@example.com" not in deleted_key
+
+
+
+def test_account_fingerprint_is_normalized_and_stable():
+    left = account_fingerprint(
+        " User@Example.com "
+    )
+    right = account_fingerprint(
+        "user@example.com"
+    )
+
+    assert left == right
+    assert len(left) == 64
+    assert "user@example.com" not in left

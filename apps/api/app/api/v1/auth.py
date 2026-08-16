@@ -26,6 +26,7 @@ from app.schemas.auth import (
 )
 from app.services.audit import append_audit
 from app.services.auth_rate_limit import (
+    account_fingerprint,
     clear_account_login_failures,
     login_rate_limit_exceeded,
     record_failed_login,
@@ -70,7 +71,7 @@ def _audit_login_security_event(
         request_id=getattr(request.state, "request_id", None),
         source_ip=source_ip,
         details={
-            "email": email,
+            "account_fingerprint": account_fingerprint(email),
             "reason": reason,
             "stage": stage,
         },
@@ -227,8 +228,12 @@ def login(
             action="auth.login",
             result="denied",
             request_id=getattr(request.state, "request_id", None),
-            source_ip=request.client.host if request.client else None,
-            details={"email": email},
+            source_ip=source_ip,
+            details={
+                "account_fingerprint": account_fingerprint(email),
+                "reason": "invalid_credentials",
+                "stage": "credentials",
+            },
         )
         db.commit()
         raise HTTPException(status_code=401, detail="invalid_credentials")

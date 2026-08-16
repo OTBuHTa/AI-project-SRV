@@ -77,7 +77,9 @@ def test_login_returns_429_when_rate_limit_exceeded(
     assert audit_kwargs["action"] == "auth.login"
     assert audit_kwargs["result"] == "denied"
     assert audit_kwargs["details"] == {
-        "email": "blocked@example.com",
+        "account_fingerprint": auth_api.account_fingerprint(
+            "blocked@example.com"
+        ),
         "reason": "rate_limited",
         "stage": "precheck",
     }
@@ -148,7 +150,9 @@ def test_login_rate_limit_redis_failure_is_503(
     assert audit_kwargs["action"] == "auth.login"
     assert audit_kwargs["result"] == "error"
     assert audit_kwargs["details"] == {
-        "email": "user@example.com",
+        "account_fingerprint": auth_api.account_fingerprint(
+            "user@example.com"
+        ),
         "reason": "rate_limit_unavailable",
         "stage": "precheck",
     }
@@ -371,7 +375,9 @@ def test_failed_login_redis_record_failure_is_audited(
     assert kwargs["action"] == "auth.login"
     assert kwargs["result"] == "error"
     assert kwargs["details"] == {
-        "email": "missing@example.com",
+        "account_fingerprint": auth_api.account_fingerprint(
+            "missing@example.com"
+        ),
         "reason": "rate_limit_unavailable",
         "stage": "record_failure",
     }
@@ -460,9 +466,140 @@ def test_successful_login_clear_account_redis_failure_is_audited(
     assert kwargs["action"] == "auth.login"
     assert kwargs["result"] == "error"
     assert kwargs["details"] == {
-        "email": "user@example.com",
+        "account_fingerprint": auth_api.account_fingerprint(
+            "user@example.com"
+        ),
         "reason": "rate_limit_unavailable",
         "stage": "clear_account",
     }
+
+    db.commit.assert_called_once()
+
+
+
+def test_rate_limit_audit_does_not_expose_raw_email(
+    monkeypatch,
+):
+    from app.db.session import get_db
+
+    monkeypatch.setattr(
+        auth_api.settings,
+        "auth_rate_limit_enabled",
+        True,
+    )
+
+    redis = Mock()
+    db = Mock()
+    audit = Mock()
+
+    monkeypatch.setattr(
+        auth_api,
+        "_auth_rate_limit_redis",
+        lambda: redis,
+    )
+    monkeypatch.setattr(
+        auth_api,
+        "login_rate_limit_exceeded",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        auth_api,
+        "append_audit",
+        audit,
+    )
+
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "Private.User@example.com",
+                "password": "wrong-password",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 429
+
+    details = audit.call_args.kwargs["details"]
+
+    assert "email" not in details
+    assert "Private.User@example.com" not in str(details)
+    assert "private.user@example.com" not in str(details)
+
+    assert details["account_fingerprint"] == (
+        auth_api.account_fingerprint(
+            "private.user@example.com"
+        )
+    )
+
+
+def test_invalid_credentials_audit_uses_account_fingerprint(
+    monkeypatch,
+):
+    from app.db.session import get_db
+
+    monkeypatch.setattr(
+        auth_api.settings,
+        "auth_rate_limit_enabled",
+        False,
+    )
+
+    db = Mock()
+    audit = Mock()
+
+    db.scalar.return_value = None
+
+    monkeypatch.setattr(
+        auth_api,
+        "append_audit",
+        audit,
+    )
+
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "Private.User@example.com",
+                "password": "wrong-password",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": "invalid_credentials"
+    }
+
+    audit.assert_called_once()
+
+    kwargs = audit.call_args.kwargs
+    details = kwargs["details"]
+
+    assert kwargs["action"] == "auth.login"
+    assert kwargs["result"] == "denied"
+
+    assert details == {
+        "account_fingerprint": auth_api.account_fingerprint(
+            "private.user@example.com"
+        ),
+        "reason": "invalid_credentials",
+        "stage": "credentials",
+    }
+
+    assert "email" not in details
+    assert "Private.User@example.com" not in str(details)
+    assert "private.user@example.com" not in str(details)
 
     db.commit.assert_called_once()
