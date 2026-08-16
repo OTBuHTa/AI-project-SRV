@@ -1,0 +1,9 @@
+# AI-project-SRV API CI isolated build dependency baseline
+#
+# Applies only to pip isolated build environments.
+# Validated target:
+# - Ubuntu 24.04
+# - CPython 3.12
+# - pip 26.2.x
+
+setuptools==83.0.0
