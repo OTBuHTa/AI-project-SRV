@@ -122,3 +122,106 @@ def test_negative_processed_count_is_rejected():
             processed_count=-1,
             now=NOW,
         )
+
+
+def test_operational_snapshot_reports_fresh_worker():
+    from app.services.worker_operational_state import (
+        get_worker_operational_snapshot,
+    )
+
+    db = MagicMock()
+
+    state = WorkerOperationalState(
+        worker_name=WORKER_BACKUP_SCHEDULER,
+        last_heartbeat_at=NOW,
+        last_success_at=NOW,
+        last_iteration_success=True,
+        last_processed_count=4,
+    )
+
+    result = MagicMock()
+    result.all.return_value = [state]
+    db.scalars.return_value = result
+
+    snapshot = get_worker_operational_snapshot(
+        db,
+        now=NOW,
+    )
+
+    scheduler = snapshot[0]
+
+    assert scheduler.worker_name == WORKER_BACKUP_SCHEDULER
+    assert scheduler.state_present is True
+    assert scheduler.heartbeat_fresh is True
+    assert scheduler.heartbeat_age_seconds == 0.0
+    assert scheduler.last_success_age_seconds == 0.0
+    assert scheduler.last_processed_count == 4
+    assert scheduler.last_iteration_success is True
+
+    assert len(snapshot) == 3
+
+
+def test_operational_snapshot_marks_stale_heartbeat():
+    from datetime import timedelta
+
+    from app.services.worker_operational_state import (
+        get_worker_operational_snapshot,
+    )
+
+    db = MagicMock()
+
+    state = WorkerOperationalState(
+        worker_name=WORKER_BACKUP_ALERT_DELIVERY,
+        last_heartbeat_at=NOW - timedelta(seconds=91),
+        last_success_at=NOW - timedelta(seconds=120),
+        last_iteration_success=False,
+        last_processed_count=2,
+    )
+
+    result = MagicMock()
+    result.all.return_value = [state]
+    db.scalars.return_value = result
+
+    snapshot = get_worker_operational_snapshot(
+        db,
+        now=NOW,
+    )
+
+    backup_delivery = next(
+        item
+        for item in snapshot
+        if item.worker_name
+        == WORKER_BACKUP_ALERT_DELIVERY
+    )
+
+    assert backup_delivery.state_present is True
+    assert backup_delivery.heartbeat_fresh is False
+    assert backup_delivery.heartbeat_age_seconds == 91.0
+    assert backup_delivery.last_success_age_seconds == 120.0
+    assert backup_delivery.last_iteration_success is False
+
+
+def test_operational_snapshot_reports_missing_workers():
+    from app.services.worker_operational_state import (
+        get_worker_operational_snapshot,
+    )
+
+    db = MagicMock()
+
+    result = MagicMock()
+    result.all.return_value = []
+    db.scalars.return_value = result
+
+    snapshot = get_worker_operational_snapshot(
+        db,
+        now=NOW,
+    )
+
+    assert len(snapshot) == 3
+
+    for item in snapshot:
+        assert item.state_present is False
+        assert item.heartbeat_fresh is False
+        assert item.heartbeat_age_seconds is None
+        assert item.last_success_age_seconds is None
+        assert item.last_iteration_success is None

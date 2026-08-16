@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -194,3 +195,123 @@ def persist_worker_failed(
             now=now,
         )
         db.commit()
+
+
+WORKER_NAMES = (
+    WORKER_BACKUP_SCHEDULER,
+    WORKER_BACKUP_ALERT_DELIVERY,
+    WORKER_AGENT_LIFECYCLE_ALERT_DELIVERY,
+)
+
+WORKER_HEARTBEAT_STALE_AFTER_SECONDS = {
+    WORKER_BACKUP_SCHEDULER: 180,
+    WORKER_BACKUP_ALERT_DELIVERY: 90,
+    WORKER_AGENT_LIFECYCLE_ALERT_DELIVERY: 90,
+}
+
+
+@dataclass(frozen=True)
+class WorkerOperationalSnapshot:
+    worker_name: str
+    state_present: bool
+    heartbeat_fresh: bool
+    heartbeat_stale_after_seconds: int
+    heartbeat_age_seconds: float | None
+    last_success_age_seconds: float | None
+    last_processed_count: int
+    last_iteration_success: bool | None
+
+
+def _age_seconds(
+    *,
+    now: datetime,
+    value: datetime | None,
+) -> float | None:
+    if value is None:
+        return None
+
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+
+    age = (
+        now
+        - value.astimezone(timezone.utc)
+    ).total_seconds()
+
+    return max(0.0, age)
+
+
+def get_worker_operational_snapshot(
+    db: Session,
+    *,
+    now: datetime | None = None,
+) -> list[WorkerOperationalSnapshot]:
+    observed_at = _normalized_now(now)
+
+    states = {
+        state.worker_name: state
+        for state in list_worker_operational_states(db)
+        if state.worker_name in VALID_WORKERS
+    }
+
+    result: list[WorkerOperationalSnapshot] = []
+
+    for worker_name in WORKER_NAMES:
+        state = states.get(worker_name)
+
+        stale_after = (
+            WORKER_HEARTBEAT_STALE_AFTER_SECONDS[
+                worker_name
+            ]
+        )
+
+        if state is None:
+            result.append(
+                WorkerOperationalSnapshot(
+                    worker_name=worker_name,
+                    state_present=False,
+                    heartbeat_fresh=False,
+                    heartbeat_stale_after_seconds=(
+                        stale_after
+                    ),
+                    heartbeat_age_seconds=None,
+                    last_success_age_seconds=None,
+                    last_processed_count=0,
+                    last_iteration_success=None,
+                )
+            )
+            continue
+
+        heartbeat_age = _age_seconds(
+            now=observed_at,
+            value=state.last_heartbeat_at,
+        )
+
+        success_age = _age_seconds(
+            now=observed_at,
+            value=state.last_success_at,
+        )
+
+        result.append(
+            WorkerOperationalSnapshot(
+                worker_name=worker_name,
+                state_present=True,
+                heartbeat_fresh=(
+                    heartbeat_age is not None
+                    and heartbeat_age <= stale_after
+                ),
+                heartbeat_stale_after_seconds=(
+                    stale_after
+                ),
+                heartbeat_age_seconds=heartbeat_age,
+                last_success_age_seconds=success_age,
+                last_processed_count=(
+                    state.last_processed_count
+                ),
+                last_iteration_success=(
+                    state.last_iteration_success
+                ),
+            )
+        )
+
+    return result

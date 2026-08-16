@@ -220,3 +220,209 @@ def test_metrics_collection_failure_is_visible_without_http_failure(
         "srv_notification_metrics_collection_success 0.0"
         in response.text
     )
+
+
+def test_worker_operational_metrics_have_bounded_labels(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    import app.observability.metrics as metrics_module
+
+    snapshot = [
+        SimpleNamespace(
+            worker_name="backup_scheduler",
+            state_present=True,
+            heartbeat_fresh=True,
+            heartbeat_stale_after_seconds=180,
+            heartbeat_age_seconds=12.0,
+            last_success_age_seconds=45.0,
+            last_processed_count=3,
+            last_iteration_success=True,
+        ),
+        SimpleNamespace(
+            worker_name="backup_alert_delivery",
+            state_present=True,
+            heartbeat_fresh=False,
+            heartbeat_stale_after_seconds=90,
+            heartbeat_age_seconds=120.0,
+            last_success_age_seconds=150.0,
+            last_processed_count=2,
+            last_iteration_success=False,
+        ),
+        SimpleNamespace(
+            worker_name="agent_lifecycle_alert_delivery",
+            state_present=False,
+            heartbeat_fresh=False,
+            heartbeat_stale_after_seconds=90,
+            heartbeat_age_seconds=None,
+            last_success_age_seconds=None,
+            last_processed_count=0,
+            last_iteration_success=None,
+        ),
+    ]
+
+    monkeypatch.setattr(
+        metrics_module,
+        "get_worker_operational_snapshot",
+        lambda db: snapshot,
+    )
+
+    metrics_module.collect_worker_operational_metrics(
+        object()
+    )
+
+    body = metrics_module.render_metrics().decode()
+
+    assert (
+        'srv_worker_state_present{'
+        'worker="backup_scheduler"} 1.0'
+    ) in body
+
+    assert (
+        'srv_worker_heartbeat_fresh{'
+        'worker="backup_scheduler"} 1.0'
+    ) in body
+
+    assert (
+        'srv_worker_heartbeat_fresh{'
+        'worker="backup_alert_delivery"} 0.0'
+    ) in body
+
+    assert (
+        'srv_worker_last_heartbeat_age_seconds{'
+        'worker="backup_scheduler"} 12.0'
+    ) in body
+
+    assert (
+        'srv_worker_last_success_age_seconds{'
+        'worker="backup_scheduler"} 45.0'
+    ) in body
+
+    assert (
+        'srv_worker_last_processed_count{'
+        'worker="backup_scheduler"} 3.0'
+    ) in body
+
+    assert (
+        'srv_worker_last_iteration_success{'
+        'worker="backup_alert_delivery"} 0.0'
+    ) in body
+
+    assert (
+        "srv_worker_metrics_collection_success 1.0"
+        in body
+    )
+
+    assert "workspace-" not in body
+    assert "delivery-" not in body
+
+
+def test_missing_worker_does_not_publish_fake_age_samples(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    import app.observability.metrics as metrics_module
+
+    worker = "agent_lifecycle_alert_delivery"
+
+    snapshot = [
+        SimpleNamespace(
+            worker_name=worker,
+            state_present=False,
+            heartbeat_fresh=False,
+            heartbeat_stale_after_seconds=90,
+            heartbeat_age_seconds=None,
+            last_success_age_seconds=None,
+            last_processed_count=0,
+            last_iteration_success=None,
+        ),
+    ]
+
+    monkeypatch.setattr(
+        metrics_module,
+        "get_worker_operational_snapshot",
+        lambda db: snapshot,
+    )
+
+    metrics_module.collect_worker_operational_metrics(
+        object()
+    )
+
+    body = metrics_module.render_metrics().decode()
+
+    assert (
+        f'srv_worker_state_present{{worker="{worker}"}} 0.0'
+        in body
+    )
+
+    assert (
+        f'srv_worker_heartbeat_fresh{{worker="{worker}"}} 0.0'
+        in body
+    )
+
+    assert (
+        f'srv_worker_last_heartbeat_age_seconds{{worker="{worker}"}}'
+        not in body
+    )
+
+    assert (
+        f'srv_worker_last_success_age_seconds{{worker="{worker}"}}'
+        not in body
+    )
+
+    assert (
+        f'srv_worker_last_iteration_success{{worker="{worker}"}}'
+        not in body
+    )
+
+
+def test_worker_metrics_collection_failure_is_visible(
+    monkeypatch,
+):
+    import app.api.metrics as metrics_api
+
+    class FakeSession:
+        def __enter__(self):
+            return object()
+
+        def __exit__(
+            self,
+            exc_type,
+            exc,
+            traceback,
+        ):
+            return False
+
+    def fail_collection(db):
+        raise RuntimeError(
+            "worker state unavailable"
+        )
+
+    monkeypatch.setattr(
+        metrics_api,
+        "_collect_notification_metrics",
+        lambda: None,
+    )
+
+    monkeypatch.setattr(
+        metrics_api,
+        "SessionLocal",
+        lambda: FakeSession(),
+    )
+
+    monkeypatch.setattr(
+        metrics_api,
+        "collect_worker_operational_metrics",
+        fail_collection,
+    )
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+
+    assert (
+        "srv_worker_metrics_collection_success 0.0"
+        in response.text
+    )
