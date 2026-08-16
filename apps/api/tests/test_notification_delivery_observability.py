@@ -1192,7 +1192,6 @@ def test_problem_count_respects_problem_filter():
 
 def test_delivery_cursor_page_uses_stable_global_order():
     from app.services.notification_delivery_observability import (
-        SOURCE_AGENT_LIFECYCLE,
         SOURCE_BACKUP,
         decode_notification_delivery_cursor,
         list_notification_deliveries_page,

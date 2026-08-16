@@ -1,7 +1,4 @@
 from datetime import datetime, timezone
-from pathlib import Path
-from uuid import uuid4
-import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -35,7 +32,6 @@ from app.services.backup_alerts import evaluate_backup_alerts
 from app.services.backup_alert_events import acknowledge_backup_alert
 from app.services.backup_verification import (
     BackupVerificationError,
-    verify_postgres_archive,
 )
 
 settings = get_settings()

@@ -123,7 +123,7 @@ def probe_backup_storage() -> dict:
             "healthy": readable,
         }
 
-    except OSError as exc:
+    except OSError:
         return {
             "backend": storage.__class__.__name__,
             "root": str(root),

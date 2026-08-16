@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 
 from fastapi import Response
 
