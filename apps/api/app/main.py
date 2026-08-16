@@ -16,6 +16,7 @@ from app.api.v1.actions import router as actions_router
 from app.api.v1.ai_actions import router as ai_actions_router
 from app.api.v1.workspaces import router as workspaces_router
 from app.core.config import get_settings
+from app.core.startup_security import validate_production_security
 from app.middleware.request_context import RequestContextMiddleware
 from app.db.session import SessionLocal
 from app.services.agent_status import evaluate_agent_statuses
@@ -58,6 +59,7 @@ async def _status_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_production_security(settings)
     task = asyncio.create_task(_status_loop())
     try:
         yield
