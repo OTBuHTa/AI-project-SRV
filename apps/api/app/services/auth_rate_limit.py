@@ -6,7 +6,7 @@ from redis import Redis
 KEY_PREFIX = "aisrv:auth:login"
 
 
-def _account_fingerprint(email: str) -> str:
+def account_fingerprint(email: str) -> str:
     normalized = email.strip().lower()
 
     return hashlib.sha256(
@@ -25,7 +25,7 @@ def _ip_key(source_ip: str) -> str:
 def _account_key(email: str) -> str:
     return (
         f"{KEY_PREFIX}:account:"
-        f"{_account_fingerprint(email)}"
+        f"{account_fingerprint(email)}"
     )
 
 
@@ -93,13 +93,11 @@ def record_failed_login(
     )
 
 
-def clear_login_failures(
+def clear_account_login_failures(
     redis: Redis,
     *,
-    source_ip: str,
     email: str,
 ) -> None:
     redis.delete(
-        _ip_key(source_ip),
         _account_key(email),
     )

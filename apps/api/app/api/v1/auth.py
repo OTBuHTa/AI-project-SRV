@@ -26,7 +26,8 @@ from app.schemas.auth import (
 )
 from app.services.audit import append_audit
 from app.services.auth_rate_limit import (
-    clear_login_failures,
+    account_fingerprint,
+    clear_account_login_failures,
     login_rate_limit_exceeded,
     record_failed_login,
 )
@@ -51,6 +52,31 @@ def _disable_sensitive_response_caching(
 ) -> None:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
+
+
+def _audit_login_security_event(
+    db: Session,
+    request: Request,
+    *,
+    email: str,
+    source_ip: str,
+    result: str,
+    reason: str,
+    stage: str,
+) -> None:
+    append_audit(
+        db,
+        action="auth.login",
+        result=result,
+        request_id=getattr(request.state, "request_id", None),
+        source_ip=source_ip,
+        details={
+            "account_fingerprint": account_fingerprint(email),
+            "reason": reason,
+            "stage": stage,
+        },
+    )
+    db.commit()
 
 
 def _issue_session(db: Session, user: User, workspace_id=None) -> TokenResponse:
@@ -136,12 +162,30 @@ def login(
                 ),
             )
         except RedisError:
+            _audit_login_security_event(
+                db,
+                request,
+                email=email,
+                source_ip=source_ip,
+                result="error",
+                reason="rate_limit_unavailable",
+                stage="precheck",
+            )
             raise HTTPException(
                 status_code=503,
                 detail="authentication_service_unavailable",
             ) from None
 
         if limited:
+            _audit_login_security_event(
+                db,
+                request,
+                email=email,
+                source_ip=source_ip,
+                result="denied",
+                reason="rate_limited",
+                stage="precheck",
+            )
             raise HTTPException(
                 status_code=429,
                 detail="too_many_login_attempts",
@@ -165,6 +209,15 @@ def login(
                     ),
                 )
             except RedisError:
+                _audit_login_security_event(
+                    db,
+                    request,
+                    email=email,
+                    source_ip=source_ip,
+                    result="error",
+                    reason="rate_limit_unavailable",
+                    stage="record_failure",
+                )
                 raise HTTPException(
                     status_code=503,
                     detail="authentication_service_unavailable",
@@ -175,8 +228,12 @@ def login(
             action="auth.login",
             result="denied",
             request_id=getattr(request.state, "request_id", None),
-            source_ip=request.client.host if request.client else None,
-            details={"email": email},
+            source_ip=source_ip,
+            details={
+                "account_fingerprint": account_fingerprint(email),
+                "reason": "invalid_credentials",
+                "stage": "credentials",
+            },
         )
         db.commit()
         raise HTTPException(status_code=401, detail="invalid_credentials")
@@ -193,12 +250,20 @@ def login(
 
     if rate_limit_redis is not None:
         try:
-            clear_login_failures(
+            clear_account_login_failures(
                 rate_limit_redis,
-                source_ip=source_ip,
                 email=email,
             )
         except RedisError:
+            _audit_login_security_event(
+                db,
+                request,
+                email=email,
+                source_ip=source_ip,
+                result="error",
+                reason="rate_limit_unavailable",
+                stage="clear_account",
+            )
             raise HTTPException(
                 status_code=503,
                 detail="authentication_service_unavailable",
