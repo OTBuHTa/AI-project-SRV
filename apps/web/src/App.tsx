@@ -16,8 +16,10 @@ import {
 } from 'react-router-dom'
 
 import { useAuth } from './auth/useAuth'
+import { Agents } from './pages/Agents'
 import { Dashboard } from './pages/Dashboard'
 import { Login } from './pages/Login'
+import { Resources } from './pages/Resources'
 import { WorkspaceSelect } from './pages/WorkspaceSelect'
 
 function Placeholder({
@@ -162,15 +164,11 @@ function ProtectedShell() {
           />
           <Route
             path="/resources"
-            element={
-              <Placeholder title="Resources" />
-            }
+            element={<Resources />}
           />
           <Route
             path="/agents"
-            element={
-              <Placeholder title="Agents" />
-            }
+            element={<Agents />}
           />
           <Route
             path="/ai"
