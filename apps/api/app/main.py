@@ -20,6 +20,7 @@ from app.core.startup_security import validate_production_security
 from app.middleware.request_context import RequestContextMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.db.session import SessionLocal
+from app.version import API_VERSION
 from app.services.agent_status import evaluate_agent_statuses
 from app.services.agent_token_lifecycle import cleanup_expired_pending_rotations
 from app.services.agent_lifecycle_monitor import sync_all_agent_lifecycle_alerts
@@ -71,7 +72,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-app = FastAPI(title=settings.app_name, version="0.1.35-alpha", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version=API_VERSION, lifespan=lifespan)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestContextMiddleware)
 app.include_router(health_router)
@@ -94,6 +95,6 @@ app.include_router(inventory_router)
 def api_root():
     return {
         "name": settings.app_name,
-        "version": "0.1.35-alpha",
+        "version": API_VERSION,
         "phase": "Infrastructure Inventory + Lifecycle",
     }
