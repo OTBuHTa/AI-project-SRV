@@ -15,6 +15,12 @@ RELEASE_NOTE_RE = re.compile(
     r"^RELEASE-v(?P<version>\d+\.\d+\.\d+-alpha)\.md$"
 )
 
+HISTORICAL_HEADER_TEMPLATES = (
+    "# v{version}",
+    "# AI-project SRV v{version}",
+    "# Release v{version}",
+)
+
 
 def _version_key(version: str) -> tuple[int, int, int]:
     match = VERSION_RE.fullmatch(version)
@@ -28,21 +34,56 @@ def _version_key(version: str) -> tuple[int, int, int]:
     )
 
 
-def _latest_release_version(repo_root: Path) -> str | None:
+def _release_notes(repo_root: Path) -> list[tuple[Path, str]]:
     docs = repo_root / "docs"
     if not docs.is_dir():
-        return None
+        return []
 
-    versions: list[str] = []
+    notes: list[tuple[Path, str]] = []
     for path in docs.iterdir():
         match = RELEASE_NOTE_RE.fullmatch(path.name)
         if match is not None:
-            versions.append(match.group("version"))
+            notes.append((path, match.group("version")))
+
+    return notes
+
+
+def _latest_release_version(repo_root: Path) -> str | None:
+    versions = [
+        version
+        for _, version in _release_notes(repo_root)
+    ]
 
     if not versions:
         return None
 
     return max(versions, key=_version_key)
+
+
+def _historical_release_header_errors(
+    repo_root: Path,
+) -> list[str]:
+    errors: list[str] = []
+
+    for path, version in sorted(
+        _release_notes(repo_root),
+        key=lambda item: _version_key(item[1]),
+    ):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        actual_header = lines[0].strip() if lines else ""
+
+        expected_headers = tuple(
+            template.format(version=version)
+            for template in HISTORICAL_HEADER_TEMPLATES
+        )
+
+        if actual_header not in expected_headers:
+            errors.append(
+                f"{path}: historical release header does not match "
+                f"filename version v{version}: found {actual_header!r}"
+            )
+
+    return errors
 
 
 def verify_release_metadata(
@@ -89,6 +130,8 @@ def verify_release_metadata(
                 f"{release_note}: expected header {expected_header!r}, "
                 f"found {actual_header!r}"
             )
+
+    errors.extend(_historical_release_header_errors(repo_root))
 
     latest_release_version = _latest_release_version(repo_root)
     if (
