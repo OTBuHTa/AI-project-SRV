@@ -1,5 +1,7 @@
 import {
   Activity,
+  Archive,
+  Bell,
   Bot,
   Boxes,
   BrainCircuit,
@@ -14,13 +16,21 @@ import {
   NavLink,
   Route,
   Routes,
+  useLocation,
 } from 'react-router-dom'
 
+import {
+  loginPath,
+  workspaceSelectPath,
+} from './auth/redirect'
 import { useAuth } from './auth/useAuth'
 import { Actions } from './pages/Actions'
 import { Agents } from './pages/Agents'
 import { AIAssistant } from './pages/AIAssistant'
+import { Audit } from './pages/Audit'
+import { Backups } from './pages/Backups'
 import { Dashboard } from './pages/Dashboard'
+import { Notifications } from './pages/Notifications'
 import { Login } from './pages/Login'
 import { Resources } from './pages/Resources'
 import { WorkspaceSelect } from './pages/WorkspaceSelect'
@@ -51,6 +61,8 @@ const nav = [
   ['/agents', 'Agents', Bot],
   ['/ai', 'AI Assistant', BrainCircuit],
   ['/actions', 'Actions', ShieldCheck],
+  ['/notifications', 'Notifications', Bell],
+  ['/backups', 'Backups', Archive],
   ['/audit', 'Audit', ClipboardList],
   ['/settings', 'Settings', Settings],
 ] as const
@@ -70,19 +82,31 @@ function LoadingScreen() {
 
 function ProtectedShell() {
   const auth = useAuth()
+  const location = useLocation()
+
+  const next = (
+    location.pathname
+    + location.search
+    + location.hash
+  )
 
   if (auth.status === 'loading') {
     return <LoadingScreen />
   }
 
   if (auth.status === 'anonymous') {
-    return <Navigate to="/login" replace />
+    return (
+      <Navigate
+        to={loginPath(next)}
+        replace
+      />
+    )
   }
 
   if (!auth.workspace) {
     return (
       <Navigate
-        to="/select-workspace"
+        to={workspaceSelectPath(next)}
         replace
       />
     )
@@ -183,10 +207,16 @@ function ProtectedShell() {
             element={<Actions />}
           />
           <Route
+            path="/notifications"
+            element={<Notifications />}
+          />
+          <Route
+            path="/backups"
+            element={<Backups />}
+          />
+          <Route
             path="/audit"
-            element={
-              <Placeholder title="Audit" />
-            }
+            element={<Audit />}
           />
           <Route
             path="/settings"

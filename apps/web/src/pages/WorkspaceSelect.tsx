@@ -8,13 +8,23 @@ import {
 import {
   Navigate,
   useNavigate,
+  useSearchParams,
 } from 'react-router-dom'
 
+import {
+  loginPath,
+  safeNext,
+} from '../auth/redirect'
 import { useAuth } from '../auth/useAuth'
 
 export function WorkspaceSelect() {
   const auth = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
+  const next = safeNext(
+    searchParams.get('next'),
+  )
 
   const [error, setError] =
     useState<string | null>(null)
@@ -23,7 +33,12 @@ export function WorkspaceSelect() {
     useState<string | null>(null)
 
   if (auth.status === 'anonymous') {
-    return <Navigate to="/login" replace />
+    return (
+      <Navigate
+        to={loginPath(next)}
+        replace
+      />
+    )
   }
 
   async function select(id: string) {
@@ -32,7 +47,7 @@ export function WorkspaceSelect() {
 
     try {
       await auth.selectWorkspace(id)
-      navigate('/', { replace: true })
+      navigate(next, { replace: true })
     } catch {
       setError('workspace_selection_failed')
     } finally {

@@ -9,14 +9,24 @@ import {
 import {
   Navigate,
   useNavigate,
+  useSearchParams,
 } from 'react-router-dom'
 
 import { ApiError } from '../api/http'
+import {
+  safeNext,
+  workspaceSelectPath,
+} from '../auth/redirect'
 import { useAuth } from '../auth/useAuth'
 
 export function Login() {
   const auth = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
+  const next = safeNext(
+    searchParams.get('next'),
+  )
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -29,7 +39,12 @@ export function Login() {
     auth.status === 'authenticated'
     && auth.workspace
   ) {
-    return <Navigate to="/" replace />
+    return (
+      <Navigate
+        to={next}
+        replace
+      />
+    )
   }
 
   async function submit(
@@ -46,7 +61,9 @@ export function Login() {
       )
 
       navigate(
-        workspace ? '/' : '/select-workspace',
+        workspace
+          ? next
+          : workspaceSelectPath(next),
         { replace: true },
       )
     } catch (requestError) {
