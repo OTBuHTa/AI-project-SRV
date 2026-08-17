@@ -3,9 +3,13 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 
 from app.api.health import router as health_router
 from app.api.metrics import router as metrics_router
+from app.api.validation_errors import (
+    request_validation_exception_handler,
+)
 from app.api.v1.audit import router as audit_router
 from app.api.v1.agents import router as agents_router
 from app.api.v1.auth import router as auth_router
@@ -73,6 +77,10 @@ async def lifespan(app: FastAPI):
             pass
 
 app = FastAPI(title=settings.app_name, version=API_VERSION, lifespan=lifespan)
+app.add_exception_handler(
+    RequestValidationError,
+    request_validation_exception_handler,
+)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestContextMiddleware)
 app.include_router(health_router)

@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.1.38-alpha` — Historical release-note integrity.
+`v0.2.0-alpha` — Web Control Center Foundation.
 
 ## Architecture principles
 - AI Core runs on the workstation.
