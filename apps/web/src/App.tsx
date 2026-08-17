@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   LogOut,
   Settings,
+  ShieldCheck,
 } from 'lucide-react'
 import {
   Navigate,
@@ -16,7 +17,9 @@ import {
 } from 'react-router-dom'
 
 import { useAuth } from './auth/useAuth'
+import { Actions } from './pages/Actions'
 import { Agents } from './pages/Agents'
+import { AIAssistant } from './pages/AIAssistant'
 import { Dashboard } from './pages/Dashboard'
 import { Login } from './pages/Login'
 import { Resources } from './pages/Resources'
@@ -47,6 +50,7 @@ const nav = [
   ['/resources', 'Resources', Boxes],
   ['/agents', 'Agents', Bot],
   ['/ai', 'AI Assistant', BrainCircuit],
+  ['/actions', 'Actions', ShieldCheck],
   ['/audit', 'Audit', ClipboardList],
   ['/settings', 'Settings', Settings],
 ] as const
@@ -172,9 +176,11 @@ function ProtectedShell() {
           />
           <Route
             path="/ai"
-            element={
-              <Placeholder title="AI Assistant" />
-            }
+            element={<AIAssistant />}
+          />
+          <Route
+            path="/actions"
+            element={<Actions />}
           />
           <Route
             path="/audit"
