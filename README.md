@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.1.37-alpha` — Release version regression protection.
+`v0.1.38-alpha` — Historical release-note integrity.
 
 ## Architecture principles
 - AI Core runs on the workstation.

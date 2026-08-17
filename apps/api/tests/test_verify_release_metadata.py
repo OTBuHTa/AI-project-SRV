@@ -12,6 +12,7 @@ def _write_repo(
     milestone: str | None = None,
     release_header: str | None = None,
     extra_release_versions: tuple[str, ...] = (),
+    extra_release_headers: tuple[tuple[str, str], ...] = (),
 ) -> Path:
     if milestone is None:
         milestone = version
@@ -35,6 +36,12 @@ def _write_repo(
     for extra_version in extra_release_versions:
         (docs / f"RELEASE-v{extra_version}.md").write_text(
             f"# v{extra_version}\n",
+            encoding="utf-8",
+        )
+
+    for extra_version, header in extra_release_headers:
+        (docs / f"RELEASE-v{extra_version}.md").write_text(
+            f"{header}\n",
             encoding="utf-8",
         )
 
@@ -137,3 +144,54 @@ def test_release_version_order_is_numeric(
         "v0.1.10-alpha"
         in capsys.readouterr().out
     )
+
+
+def test_verify_release_metadata_accepts_legacy_historical_headers(
+    tmp_path,
+    capsys,
+):
+    root = _write_repo(
+        tmp_path,
+        release_header=f"# v{VERSION}",
+        extra_release_headers=(
+            (
+                "0.1.34-alpha",
+                "# AI-project SRV v0.1.34-alpha",
+            ),
+            (
+                "0.1.33-alpha",
+                "# Release v0.1.33-alpha",
+            ),
+        ),
+    )
+
+    assert verifier.verify_release_metadata(root, VERSION) == 0
+    assert (
+        f"Verified release metadata for v{VERSION}."
+        in capsys.readouterr().out
+    )
+
+
+def test_verify_release_metadata_rejects_historical_header_mismatch(
+    tmp_path,
+    capsys,
+):
+    root = _write_repo(
+        tmp_path,
+        release_header=f"# v{VERSION}",
+        extra_release_headers=(
+            (
+                "0.1.34-alpha",
+                "# AI-project SRV v0.1.33-alpha",
+            ),
+        ),
+    )
+
+    assert verifier.verify_release_metadata(root, VERSION) == 1
+    output = capsys.readouterr().out
+    assert (
+        "historical release header does not match filename version "
+        "v0.1.34-alpha"
+        in output
+    )
+    assert "found '# AI-project SRV v0.1.33-alpha'" in output
