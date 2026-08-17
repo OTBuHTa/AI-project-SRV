@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.1.5-alpha` — AI Action Proposal + Verification.
+`v0.1.36-alpha` — Release/version consistency hardening.
 
 ## Architecture principles
 - AI Core runs on the workstation.
@@ -41,8 +41,6 @@ Local-first AI infrastructure management platform.
 ## Current vertical slice
 User -> authentication -> workspace membership -> permission -> policy/audit -> agent/tool execution -> result -> audit.
 
-## Next milestone
-`v0.1.6-alpha`: Backup Pipeline + NAS restore verification.
 
 
 ## v0.1.2-alpha
