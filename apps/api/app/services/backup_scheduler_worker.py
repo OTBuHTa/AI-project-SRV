@@ -2,6 +2,10 @@ import logging
 import time
 from datetime import datetime, timezone
 
+from app.core.config import get_settings
+from app.core.startup_security import (
+    validate_production_build_identity,
+)
 from app.db.session import SessionLocal
 from app.services.backup_alert_monitor import sync_scheduled_workspace_alerts
 from app.services.backup_execution import (
@@ -133,6 +137,8 @@ def _record_failed(error: object) -> None:
 
 
 def run_forever() -> None:
+    validate_production_build_identity(get_settings())
+
     logger.info("backup scheduler worker started")
 
     while True:

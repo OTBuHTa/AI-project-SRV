@@ -202,3 +202,60 @@ def test_production_accepts_explicit_proxy_network():
             forwarded_allow_ips="172.20.0.0/24",
         )
     )
+
+
+def test_development_allows_unknown_build_revision():
+    from app.core.startup_security import (
+        validate_production_build_identity,
+    )
+
+    validate_production_build_identity(
+        Settings(
+            app_env="development",
+            app_build_revision="unknown",
+        )
+    )
+
+
+def test_production_accepts_full_build_revision():
+    from app.core.startup_security import (
+        validate_production_build_identity,
+    )
+
+    validate_production_build_identity(
+        Settings(
+            app_env="production",
+            app_build_revision=(
+                "d287b55c5f487b43157c48ad97dfe8d48dfb6bfa"
+            ),
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "revision",
+    [
+        "unknown",
+        "",
+        "d287b55",
+        "g287b55c5f487b43157c48ad97dfe8d48dfb6bfa",
+        "D287B55C5F487B43157C48AD97DFE8D48DFB6BFA",
+    ],
+)
+def test_production_rejects_invalid_build_revision(
+    revision,
+):
+    from app.core.startup_security import (
+        validate_production_build_identity,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="APP_BUILD_REVISION",
+    ):
+        validate_production_build_identity(
+            Settings(
+                app_env="production",
+                app_build_revision=revision,
+            )
+        )

@@ -7,30 +7,33 @@ from fastapi.exceptions import RequestValidationError
 
 from app.api.health import router as health_router
 from app.api.metrics import router as metrics_router
+from app.api.v1.actions import router as actions_router
+from app.api.v1.agents import router as agents_router
+from app.api.v1.ai_actions import router as ai_actions_router
+from app.api.v1.ai_tools import router as ai_tools_router
+from app.api.v1.assistant import router as assistant_router
+from app.api.v1.audit import router as audit_router
+from app.api.v1.auth import router as auth_router
+from app.api.v1.backups import router as backups_router
+from app.api.v1.inventory import router as inventory_router
+from app.api.v1.monitoring import router as monitoring_router
+from app.api.v1.notifications import router as notifications_router
+from app.api.v1.workspaces import router as workspaces_router
 from app.api.validation_errors import (
     request_validation_exception_handler,
 )
-from app.api.v1.audit import router as audit_router
-from app.api.v1.agents import router as agents_router
-from app.api.v1.auth import router as auth_router
-from app.api.v1.monitoring import router as monitoring_router
-from app.api.v1.ai_tools import router as ai_tools_router
-from app.api.v1.assistant import router as assistant_router
-from app.api.v1.actions import router as actions_router
-from app.api.v1.ai_actions import router as ai_actions_router
-from app.api.v1.workspaces import router as workspaces_router
 from app.core.config import get_settings
-from app.core.startup_security import validate_production_security
+from app.core.startup_security import (
+    validate_production_build_identity,
+    validate_production_security,
+)
+from app.db.session import SessionLocal
 from app.middleware.request_context import RequestContextMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.db.session import SessionLocal
-from app.version import API_VERSION
+from app.services.agent_lifecycle_monitor import sync_all_agent_lifecycle_alerts
 from app.services.agent_status import evaluate_agent_statuses
 from app.services.agent_token_lifecycle import cleanup_expired_pending_rotations
-from app.services.agent_lifecycle_monitor import sync_all_agent_lifecycle_alerts
-from app.api.v1.backups import router as backups_router
-from app.api.v1.notifications import router as notifications_router
-from app.api.v1.inventory import router as inventory_router
+from app.version import API_VERSION
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -66,6 +69,7 @@ async def _status_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_production_security(settings)
+    validate_production_build_identity(settings)
     task = asyncio.create_task(_status_loop())
     try:
         yield
@@ -104,5 +108,6 @@ def api_root():
     return {
         "name": settings.app_name,
         "version": API_VERSION,
+        "build_revision": settings.app_build_revision,
         "phase": "Infrastructure Inventory + Lifecycle",
     }

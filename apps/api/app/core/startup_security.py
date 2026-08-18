@@ -1,5 +1,8 @@
+import re
+
 from app.core.config import Settings
 
+FULL_GIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 DEFAULT_JWT_SECRET = "change-me-before-external-access"
 EXAMPLE_JWT_SECRET = (
@@ -71,4 +74,21 @@ def validate_production_security(
         raise RuntimeError(
             "unsafe production security configuration: "
             + "; ".join(errors)
+        )
+
+def validate_production_build_identity(
+    settings: Settings,
+) -> None:
+    if settings.app_env.lower() != "production":
+        return
+
+    build_revision = settings.app_build_revision.strip()
+
+    if not FULL_GIT_SHA_PATTERN.fullmatch(
+        build_revision
+    ):
+        raise RuntimeError(
+            "unsafe production build identity: "
+            "APP_BUILD_REVISION must be a full "
+            "40-character lowercase Git SHA"
         )

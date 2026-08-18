@@ -4,6 +4,9 @@ import time
 from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.startup_security import (
+    validate_production_build_identity,
+)
 from app.db.session import SessionLocal
 from app.models.core import BackupAlertEvent, NotificationDestination
 from app.services.backup_alert_delivery_queue import (
@@ -25,7 +28,6 @@ from app.services.worker_operational_state import (
     persist_worker_started,
     persist_worker_succeeded,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +195,8 @@ def _record_failed(error: object) -> None:
 
 
 def run_forever() -> None:
+    validate_production_build_identity(get_settings())
+
     logger.info("backup alert delivery worker started")
 
     while True:
