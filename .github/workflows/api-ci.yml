@@ -75,3 +75,54 @@ jobs:
         working-directory: .
         run: |
           git diff --check
+
+  image-provenance:
+    name: Docker / build identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Resolve checked-out revision
+        id: revision
+        run: |
+          revision="$(git rev-parse HEAD)"
+          echo "sha=$revision" >> "$GITHUB_OUTPUT"
+          echo "Checked-out revision: $revision"
+
+      - name: Build API image with revision
+        working-directory: apps/api
+        run: |
+          docker build \
+            --build-arg "APP_BUILD_REVISION=${{ steps.revision.outputs.sha }}" \
+            --tag ai-project-srv-api:ci \
+            .
+
+      - name: Verify image build identity
+        env:
+          EXPECTED_REVISION: ${{ steps.revision.outputs.sha }}
+        run: |
+          label_revision="$(
+            docker image inspect \
+              ai-project-srv-api:ci \
+              --format "{{ index .Config.Labels \"org.opencontainers.image.revision\" }}"
+          )"
+
+          env_revision="$(
+            docker image inspect \
+              ai-project-srv-api:ci \
+              --format "{{range .Config.Env}}{{println .}}{{end}}" \
+              | sed -n "s/^APP_BUILD_REVISION=//p"
+          )"
+
+          echo "EXPECTED=$EXPECTED_REVISION"
+          echo "LABEL=$label_revision"
+          echo "ENV=$env_revision"
+
+          test "${#EXPECTED_REVISION}" -eq 40
+          test "$label_revision" = "$EXPECTED_REVISION"
+          test "$env_revision" = "$EXPECTED_REVISION"
