@@ -45,6 +45,15 @@ services:
 
 
 
+  web:
+    build:
+      context: ./apps/web
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
   backup-scheduler:
     build:
       context: ./apps/api

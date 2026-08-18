@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
@@ -78,19 +79,74 @@ def list_active_agent_lifecycle_alert_events(
 
 
 @router.websocket("/ws/{workspace_id}")
-async def workspace_ws(websocket: WebSocket, workspace_id: uuid.UUID, token: str):
+async def workspace_ws(
+    websocket: WebSocket,
+    workspace_id: uuid.UUID,
+):
+    await websocket.accept()
+
     try:
-        claims=decode_access_token(token)
-        user_id=uuid.UUID(claims["sub"])
+        message = await asyncio.wait_for(
+            websocket.receive_json(),
+            timeout=5,
+        )
+    except (
+        TimeoutError,
+        ValueError,
+        WebSocketDisconnect,
+    ):
+        await websocket.close(code=4401)
+        return
+
+    if (
+        not isinstance(message, dict)
+        or message.get("type") != "auth"
+        or not isinstance(
+            message.get("token"),
+            str,
+        )
+    ):
+        await websocket.close(code=4401)
+        return
+
+    try:
+        claims = decode_access_token(
+            message["token"],
+        )
+        user_id = uuid.UUID(claims["sub"])
     except Exception:
-        await websocket.close(code=4401); return
+        await websocket.close(code=4401)
+        return
+
     with SessionLocal() as db:
-        membership=db.scalar(select(Membership).where(Membership.user_id==user_id, Membership.workspace_id==workspace_id))
+        membership = db.scalar(
+            select(Membership).where(
+                Membership.user_id == user_id,
+                Membership.workspace_id
+                == workspace_id,
+            )
+        )
+
         if not membership:
-            await websocket.close(code=4403); return
-    await hub.connect(workspace_id, websocket)
+            await websocket.close(code=4403)
+            return
+
+    await hub.register(
+        workspace_id,
+        websocket,
+    )
+
     try:
+        await websocket.send_json({
+            "type": "auth.ok",
+        })
+
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        await hub.disconnect(workspace_id, websocket)
+        pass
+    finally:
+        await hub.disconnect(
+            workspace_id,
+            websocket,
+        )

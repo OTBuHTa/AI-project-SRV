@@ -54,12 +54,14 @@ export function useWorkspaceTelemetry() {
       const url =
         `${protocol}//${window.location.host}`
         + `/api/v1/monitoring/ws/${activeWorkspaceId}`
-        + `?token=${encodeURIComponent(token)}`
 
       socket = new WebSocket(url)
 
       socket.onopen = () => {
-        setConnectionStatus('connected')
+        socket?.send(JSON.stringify({
+          type: 'auth',
+          token,
+        }))
       }
 
       socket.onmessage = (event) => {
@@ -68,6 +70,13 @@ export function useWorkspaceTelemetry() {
             event.data,
           ) as {
             type?: string
+          }
+
+          if (
+            message.type === 'auth.ok'
+          ) {
+            setConnectionStatus('connected')
+            return
           }
 
           if (

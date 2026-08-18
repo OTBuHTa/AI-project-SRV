@@ -1,6 +1,6 @@
 import {
   apiJson,
-  bearerHeaders,
+  workspaceHeaders,
 } from './http'
 
 export type AuditEvent = {
@@ -18,12 +18,16 @@ export type AuditEvent = {
 
 export function getAuditEvents(
   accessToken: string,
+  workspaceId: string,
   limit = 100,
 ) {
   return apiJson<AuditEvent[]>(
     `/api/v1/audit?limit=${limit}`,
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }

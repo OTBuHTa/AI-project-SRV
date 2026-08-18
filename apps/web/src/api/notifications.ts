@@ -1,6 +1,6 @@
 import {
   apiJson,
-  bearerHeaders,
+  workspaceHeaders,
 } from './http'
 
 export type NotificationDeliveryHealthCounts = {
@@ -52,23 +52,31 @@ export type NotificationDeliveryPage = {
 
 export function getNotificationDeliveryHealth(
   accessToken: string,
+  workspaceId: string,
 ) {
   return apiJson<NotificationDeliveryHealth>(
     '/api/v1/notifications/deliveries/health',
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }
 
 export function getNotificationDeliveries(
   accessToken: string,
+  workspaceId: string,
   limit = 50,
 ) {
   return apiJson<NotificationDeliveryPage>(
     `/api/v1/notifications/deliveries/page?limit=${limit}`,
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }

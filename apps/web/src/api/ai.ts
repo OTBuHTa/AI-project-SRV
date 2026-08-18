@@ -1,6 +1,6 @@
 import {
   apiJson,
-  bearerHeaders,
+  workspaceHeaders,
 } from './http'
 
 export type ChatResponse = {
@@ -15,6 +15,7 @@ export type ChatResponse = {
 
 export function sendChat(
   accessToken: string,
+  workspaceId: string,
   message: string,
   resourceId?: string,
   conversationId?: string | null,
@@ -24,7 +25,10 @@ export function sendChat(
     {
       method: 'POST',
       headers: {
-        ...bearerHeaders(accessToken),
+        ...workspaceHeaders(
+          accessToken,
+          workspaceId,
+        ),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

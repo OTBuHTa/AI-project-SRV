@@ -1,6 +1,6 @@
 import {
   apiJson,
-  bearerHeaders,
+  workspaceHeaders,
 } from './http'
 
 export type BackupJob = {
@@ -54,61 +54,82 @@ export type BackupSchedule = {
 
 export function getBackupJobs(
   accessToken: string,
+  workspaceId: string,
 ) {
   return apiJson<BackupJob[]>(
     '/api/v1/backups',
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }
 
 export function getBackupStatus(
   accessToken: string,
+  workspaceId: string,
 ) {
   return apiJson<BackupStatus>(
     '/api/v1/backups/status',
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }
 
 export function getBackupHealth(
   accessToken: string,
+  workspaceId: string,
 ) {
   return apiJson<BackupHealth>(
     '/api/v1/backups/health',
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }
 
 export function getBackupStorageHealth(
   accessToken: string,
+  workspaceId: string,
 ) {
   return apiJson<BackupStorageHealth>(
     '/api/v1/backups/storage-health',
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }
 
 export function getBackupSchedule(
   accessToken: string,
+  workspaceId: string,
 ) {
   return apiJson<BackupSchedule | null>(
     '/api/v1/backups/schedule',
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }
 
 export function createBackup(
   accessToken: string,
+  workspaceId: string,
   backupType = 'full',
 ) {
   return apiJson<BackupJob>(
@@ -116,7 +137,10 @@ export function createBackup(
     {
       method: 'POST',
       headers: {
-        ...bearerHeaders(accessToken),
+        ...workspaceHeaders(
+          accessToken,
+          workspaceId,
+        ),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

@@ -98,16 +98,21 @@ function AuditRow({
 export function Audit() {
   const auth = useAuth()
   const token = auth.tokens?.access_token
+  const workspaceId = auth.workspace?.id
 
   const events = useQuery({
     queryKey: [
       'audit',
-      auth.workspace?.id,
+      workspaceId,
     ],
     queryFn: () =>
-      getAuditEvents(token!, 100),
+      getAuditEvents(
+        token!,
+        workspaceId!,
+        100,
+      ),
     enabled: Boolean(
-      token && auth.workspace,
+      token && workspaceId,
     ),
     refetchInterval: 15_000,
   })

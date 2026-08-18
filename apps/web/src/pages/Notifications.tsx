@@ -36,16 +36,20 @@ function statusClass(
 export function Notifications() {
   const auth = useAuth()
   const token = auth.tokens?.access_token
+  const workspaceId = auth.workspace?.id
 
   const health = useQuery({
     queryKey: [
       'notification-health',
-      auth.workspace?.id,
+      workspaceId,
     ],
     queryFn: () =>
-      getNotificationDeliveryHealth(token!),
+      getNotificationDeliveryHealth(
+        token!,
+        workspaceId!,
+      ),
     enabled: Boolean(
-      token && auth.workspace,
+      token && workspaceId,
     ),
     refetchInterval: 10_000,
   })
@@ -53,15 +57,16 @@ export function Notifications() {
   const deliveries = useQuery({
     queryKey: [
       'notification-deliveries',
-      auth.workspace?.id,
+      workspaceId,
     ],
     queryFn: () =>
       getNotificationDeliveries(
         token!,
+        workspaceId!,
         50,
       ),
     enabled: Boolean(
-      token && auth.workspace,
+      token && workspaceId,
     ),
     refetchInterval: 10_000,
   })
