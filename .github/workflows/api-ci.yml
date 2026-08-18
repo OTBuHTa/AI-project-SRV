@@ -125,4 +125,17 @@ jobs:
 
           test "${#EXPECTED_REVISION}" -eq 40
           test "$label_revision" = "$EXPECTED_REVISION"
-          test "$env_revision" = "$EXPECTED_REVISION"
+          test "$env_revision" = "$EXPECTED_REVISION"\n
+      - name: Verify Compose build identity wiring
+        env:
+          PROBE_REVISION: "0123456789abcdef0123456789abcdef01234567"
+        run: |
+          AI_SRV_ENV_FILE=/dev/null \
+          AI_SRV_BUILD_REVISION="$PROBE_REVISION" \
+          docker compose config --format json \
+            | python apps/api/scripts/verify_compose_build_identity.py "$PROBE_REVISION"
+
+          env -u AI_SRV_BUILD_REVISION \
+            AI_SRV_ENV_FILE=/dev/null \
+            docker compose config --format json \
+            | python apps/api/scripts/verify_compose_build_identity.py unknown
