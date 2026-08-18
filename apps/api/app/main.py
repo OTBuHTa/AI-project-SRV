@@ -23,7 +23,10 @@ from app.api.validation_errors import (
     request_validation_exception_handler,
 )
 from app.core.config import get_settings
-from app.core.startup_security import validate_production_security
+from app.core.startup_security import (
+    validate_production_build_identity,
+    validate_production_security,
+)
 from app.db.session import SessionLocal
 from app.middleware.request_context import RequestContextMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -66,6 +69,7 @@ async def _status_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_production_security(settings)
+    validate_production_build_identity(settings)
     task = asyncio.create_task(_status_loop())
     try:
         yield
