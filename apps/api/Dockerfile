@@ -1,5 +1,9 @@
 FROM python:3.12-slim
 
+ARG APP_BUILD_REVISION=unknown
+ENV APP_BUILD_REVISION=${APP_BUILD_REVISION}
+LABEL org.opencontainers.image.revision=${APP_BUILD_REVISION}
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
