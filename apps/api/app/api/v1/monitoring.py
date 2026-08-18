@@ -78,6 +78,16 @@ def list_active_agent_lifecycle_alert_events(
     ).all()
 
 
+async def _close_websocket(
+    websocket: WebSocket,
+    code: int,
+) -> None:
+    try:
+        await websocket.close(code=code)
+    except WebSocketDisconnect:
+        pass
+
+
 @router.websocket("/ws/{workspace_id}")
 async def workspace_ws(
     websocket: WebSocket,
@@ -90,12 +100,16 @@ async def workspace_ws(
             websocket.receive_json(),
             timeout=5,
         )
+    except WebSocketDisconnect:
+        return
     except (
         TimeoutError,
         ValueError,
-        WebSocketDisconnect,
     ):
-        await websocket.close(code=4401)
+        await _close_websocket(
+            websocket,
+            code=4401,
+        )
         return
 
     if (
@@ -106,7 +120,10 @@ async def workspace_ws(
             str,
         )
     ):
-        await websocket.close(code=4401)
+        await _close_websocket(
+            websocket,
+            code=4401,
+        )
         return
 
     try:
@@ -115,7 +132,10 @@ async def workspace_ws(
         )
         user_id = uuid.UUID(claims["sub"])
     except Exception:
-        await websocket.close(code=4401)
+        await _close_websocket(
+            websocket,
+            code=4401,
+        )
         return
 
     with SessionLocal() as db:
@@ -128,7 +148,10 @@ async def workspace_ws(
         )
 
         if not membership:
-            await websocket.close(code=4403)
+            await _close_websocket(
+                websocket,
+                code=4403,
+            )
             return
 
     await hub.register(
