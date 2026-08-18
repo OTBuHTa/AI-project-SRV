@@ -9,7 +9,10 @@ from app.core.startup_security import (
 def _settings(**overrides) -> Settings:
     values = {
         "app_env": "production",
-        "jwt_secret": "strong-production-secret",
+        "jwt_secret": (
+            "strong-production-secret-"
+            "0123456789abcdef"
+        ),
         "bootstrap_enabled": False,
         "metrics_bearer_token": "metrics-secret",
         "secure_headers_hsts_enabled": True,
@@ -44,6 +47,33 @@ def test_production_rejects_default_jwt_secret():
                 jwt_secret=(
                     "change-me-before-external-access"
                 ),
+            )
+        )
+
+
+def test_production_rejects_example_jwt_secret():
+    with pytest.raises(
+        RuntimeError,
+        match="JWT_SECRET",
+    ):
+        validate_production_security(
+            _settings(
+                jwt_secret=(
+                    "replace-with-at-least-32-random-"
+                    "bytes-before-external-access"
+                ),
+            )
+        )
+
+
+def test_production_rejects_short_jwt_secret():
+    with pytest.raises(
+        RuntimeError,
+        match="JWT_SECRET",
+    ):
+        validate_production_security(
+            _settings(
+                jwt_secret="too-short",
             )
         )
 

@@ -28,7 +28,7 @@ services:
     build:
       context: ./apps/api
     env_file:
-      - .env
+      - ${AI_SRV_ENV_FILE:-.env}
     environment:
       FORWARDED_ALLOW_IPS: "172.30.0.2"
     ports:
@@ -72,7 +72,7 @@ services:
       - app.services.backup_scheduler_worker
     restart: unless-stopped
     env_file:
-      - .env
+      - ${AI_SRV_ENV_FILE:-.env}
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,7 +91,7 @@ services:
       - app.services.backup_alert_delivery_worker
     restart: unless-stopped
     env_file:
-      - .env
+      - ${AI_SRV_ENV_FILE:-.env}
     depends_on:
       postgres:
         condition: service_healthy
@@ -108,7 +108,7 @@ services:
       - app.services.agent_lifecycle_alert_delivery_worker
     restart: unless-stopped
     env_file:
-      - .env
+      - ${AI_SRV_ENV_FILE:-.env}
     depends_on:
       postgres:
         condition: service_healthy
