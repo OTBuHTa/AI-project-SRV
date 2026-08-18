@@ -1,9 +1,26 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import os
 import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+PROJECT_PYTHON = ROOT / ".venv" / "bin" / "python"
+
+if (
+    PROJECT_PYTHON.is_file()
+    and Path(sys.executable).resolve()
+    != PROJECT_PYTHON.resolve()
+):
+    os.execv(
+        str(PROJECT_PYTHON),
+        [
+            str(PROJECT_PYTHON),
+            str(Path(__file__).resolve()),
+            *sys.argv[1:],
+        ],
+    )
 
 sys.path.insert(
     0,
