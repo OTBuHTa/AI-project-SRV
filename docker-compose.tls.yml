@@ -1,0 +1,21 @@
+services:
+  web:
+    environment:
+      AI_SRV_SERVER_NAME: ${AI_SRV_SERVER_NAME:?set AI_SRV_SERVER_NAME}
+      NGINX_ENVSUBST_FILTER: ^AI_SRV_SERVER_NAME$
+    ports: !override
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./apps/web/nginx.tls.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${AI_SRV_TLS_CERT_PATH:?set AI_SRV_TLS_CERT_PATH}:/etc/nginx/tls/tls.crt:ro
+      - ${AI_SRV_TLS_KEY_PATH:?set AI_SRV_TLS_KEY_PATH}:/etc/nginx/tls/tls.key:ro
+    healthcheck:
+      test:
+        - CMD
+        - nginx
+        - -t
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
