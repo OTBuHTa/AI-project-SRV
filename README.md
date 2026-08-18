@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.2.3-alpha` — Runtime Build Identity Hardening.
+`v0.2.4-alpha` — Build Provenance CI Hardening.
 
 ## Architecture principles
 - AI Core runs on the workstation.
