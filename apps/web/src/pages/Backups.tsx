@@ -55,12 +55,13 @@ function duration(
 export function Backups() {
   const auth = useAuth()
   const token = auth.tokens?.access_token
+  const workspaceId = auth.workspace?.id
   const queryClient = useQueryClient()
 
   const overview = useQuery({
     queryKey: [
       'backups',
-      auth.workspace?.id,
+      workspaceId,
     ],
     queryFn: async () => {
       const [
@@ -70,11 +71,11 @@ export function Backups() {
         storage,
         schedule,
       ] = await Promise.all([
-        getBackupJobs(token!),
-        getBackupStatus(token!),
-        getBackupHealth(token!),
-        getBackupStorageHealth(token!),
-        getBackupSchedule(token!),
+        getBackupJobs(token!, workspaceId!),
+        getBackupStatus(token!, workspaceId!),
+        getBackupHealth(token!, workspaceId!),
+        getBackupStorageHealth(token!, workspaceId!),
+        getBackupSchedule(token!, workspaceId!),
       ])
 
       return {
@@ -86,14 +87,18 @@ export function Backups() {
       }
     },
     enabled: Boolean(
-      token && auth.workspace,
+      token && workspaceId,
     ),
     refetchInterval: 15_000,
   })
 
   const runBackup = useMutation({
     mutationFn: () =>
-      createBackup(token!, 'full'),
+      createBackup(
+        token!,
+        workspaceId!,
+        'full',
+      ),
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: ['backups'],
@@ -122,6 +127,7 @@ export function Backups() {
           className="primary-button"
           disabled={
             !token
+            || !workspaceId
             || runBackup.isPending
           }
           onClick={() =>

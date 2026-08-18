@@ -53,3 +53,14 @@ export function bearerHeaders(
     Authorization: `Bearer ${accessToken}`,
   }
 }
+
+
+export function workspaceHeaders(
+  accessToken: string,
+  workspaceId: string,
+): HeadersInit {
+  return {
+    ...bearerHeaders(accessToken),
+    'X-Workspace-ID': workspaceId,
+  }
+}

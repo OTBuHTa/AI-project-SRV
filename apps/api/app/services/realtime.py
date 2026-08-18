@@ -11,6 +11,9 @@ class RealtimeHub:
 
     async def connect(self, workspace_id: UUID, websocket: WebSocket):
         await websocket.accept()
+        await self.register(workspace_id, websocket)
+
+    async def register(self, workspace_id: UUID, websocket: WebSocket):
         async with self._lock:
             self._clients[workspace_id].add(websocket)
 

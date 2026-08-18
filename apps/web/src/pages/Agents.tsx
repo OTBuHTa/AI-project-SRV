@@ -165,15 +165,21 @@ export function Agents() {
   const token =
     auth.tokens?.access_token
 
+  const workspaceId =
+    auth.workspace?.id
+
   const agents = useQuery({
     queryKey: [
       'agents',
-      auth.workspace?.id,
+      workspaceId,
     ],
     queryFn: () =>
-      getAgents(token!),
+      getAgents(
+        token!,
+        workspaceId!,
+      ),
     enabled: Boolean(
-      token && auth.workspace,
+      token && workspaceId,
     ),
     refetchInterval: 15_000,
   })

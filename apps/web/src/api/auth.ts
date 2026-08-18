@@ -1,6 +1,7 @@
 import {
   apiJson,
   bearerHeaders,
+  workspaceHeaders,
 } from './http'
 
 export type TokenResponse = {
@@ -88,11 +89,15 @@ export function getWorkspaces(
 
 export function getCurrentWorkspace(
   accessToken: string,
+  workspaceId: string,
 ) {
   return apiJson<Workspace>(
     '/api/v1/workspaces/current',
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }

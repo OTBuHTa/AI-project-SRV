@@ -73,15 +73,21 @@ export function AIAssistant() {
   const token =
     auth.tokens?.access_token
 
+  const workspaceId =
+    auth.workspace?.id
+
   const agents = useQuery({
     queryKey: [
       'agents',
-      auth.workspace?.id,
+      workspaceId,
     ],
     queryFn: () =>
-      getAgents(token!),
+      getAgents(
+        token!,
+        workspaceId!,
+      ),
     enabled: Boolean(
-      token && auth.workspace,
+      token && workspaceId,
     ),
     refetchInterval: 15_000,
   })
@@ -149,7 +155,11 @@ export function AIAssistant() {
 
     const cleanMessage = message.trim()
 
-    if (!token || !cleanMessage) {
+    if (
+      !token
+      || !workspaceId
+      || !cleanMessage
+    ) {
       return
     }
 
@@ -171,6 +181,7 @@ export function AIAssistant() {
     try {
       const response = await sendChat(
         token,
+        workspaceId,
         cleanMessage,
         resourceId || undefined,
         conversationId,
@@ -211,6 +222,7 @@ export function AIAssistant() {
 
     if (
       !token
+      || !workspaceId
       || !resourceId
       || !container
       || cleanIntent.length < 3
@@ -226,6 +238,7 @@ export function AIAssistant() {
       const result =
         await createActionProposal(
           token,
+          workspaceId,
           resourceId,
           cleanIntent,
           container,

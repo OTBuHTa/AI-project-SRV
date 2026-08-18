@@ -18,18 +18,22 @@ import { useAuth } from '../auth/useAuth'
 function ResourceCard({
   agent,
   accessToken,
+  workspaceId,
 }: {
   agent: Agent
   accessToken: string
+  workspaceId: string
 }) {
   const health = useQuery({
     queryKey: [
       'resource-health',
+      workspaceId,
       agent.resource_id,
     ],
     queryFn: () =>
       getResourceHealth(
         accessToken,
+        workspaceId,
         agent.resource_id,
       ),
     refetchInterval: 10_000,
@@ -38,11 +42,13 @@ function ResourceCard({
   const inventory = useQuery({
     queryKey: [
       'inventory-summary',
+      workspaceId,
       agent.resource_id,
     ],
     queryFn: () =>
       getInventorySummary(
         accessToken,
+        workspaceId,
         agent.resource_id,
       ),
     refetchInterval: 30_000,
@@ -140,15 +146,21 @@ export function Resources() {
   const token =
     auth.tokens?.access_token
 
+  const workspaceId =
+    auth.workspace?.id
+
   const agents = useQuery({
     queryKey: [
       'agents',
-      auth.workspace?.id,
+      workspaceId,
     ],
     queryFn: () =>
-      getAgents(token!),
+      getAgents(
+        token!,
+        workspaceId!,
+      ),
     enabled: Boolean(
-      token && auth.workspace,
+      token && workspaceId,
     ),
     refetchInterval: 15_000,
   })
@@ -193,11 +205,13 @@ export function Resources() {
 
       <section className="resource-grid">
         {token
+          && workspaceId
           && agents.data?.map((agent) => (
             <ResourceCard
               key={agent.resource_id}
               agent={agent}
               accessToken={token}
+              workspaceId={workspaceId}
             />
           ))}
       </section>

@@ -33,9 +33,11 @@ function formatDate(
 function ActionCard({
   plan,
   accessToken,
+  workspaceId,
 }: {
   plan: ActionPlan
   accessToken: string
+  workspaceId: string
 }) {
   const queryClient =
     useQueryClient()
@@ -44,6 +46,7 @@ function ActionCard({
     mutationFn: () =>
       approveActionPlan(
         accessToken,
+        workspaceId,
         plan.id,
       ),
     onSuccess: () => {
@@ -61,6 +64,7 @@ function ActionCard({
     mutationFn: () =>
       rejectActionPlan(
         accessToken,
+        workspaceId,
         plan.id,
       ),
     onSuccess: () => {
@@ -195,15 +199,21 @@ export function Actions() {
   const token =
     auth.tokens?.access_token
 
+  const workspaceId =
+    auth.workspace?.id
+
   const plans = useQuery({
     queryKey: [
       'action-plans',
-      auth.workspace?.id,
+      workspaceId,
     ],
     queryFn: () =>
-      getActionPlans(token!),
+      getActionPlans(
+        token!,
+        workspaceId!,
+      ),
     enabled: Boolean(
-      token && auth.workspace,
+      token && workspaceId,
     ),
     refetchInterval: 5_000,
   })
@@ -255,11 +265,13 @@ export function Actions() {
 
       <section className="action-list">
         {token
+          && workspaceId
           && plans.data?.map((plan) => (
             <ActionCard
               key={plan.id}
               plan={plan}
               accessToken={token}
+              workspaceId={workspaceId}
             />
           ))}
       </section>

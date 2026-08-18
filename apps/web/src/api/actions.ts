@@ -1,6 +1,6 @@
 import {
   apiJson,
-  bearerHeaders,
+  workspaceHeaders,
 } from './http'
 
 export type ActionPlan = {
@@ -40,6 +40,7 @@ export type ActionProposal = {
 
 export function createActionProposal(
   accessToken: string,
+  workspaceId: string,
   resourceId: string,
   message: string,
   container?: string,
@@ -49,7 +50,10 @@ export function createActionProposal(
     {
       method: 'POST',
       headers: {
-        ...bearerHeaders(accessToken),
+        ...workspaceHeaders(
+          accessToken,
+          workspaceId,
+        ),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -63,37 +67,49 @@ export function createActionProposal(
 
 export function getActionPlans(
   accessToken: string,
+  workspaceId: string,
 ) {
   return apiJson<ActionPlan[]>(
     '/api/v1/action-plans',
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }
 
 export function approveActionPlan(
   accessToken: string,
+  workspaceId: string,
   planId: string,
 ) {
   return apiJson<ActionPlan>(
     `/api/v1/action-plans/${planId}/approve`,
     {
       method: 'POST',
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }
 
 export function rejectActionPlan(
   accessToken: string,
+  workspaceId: string,
   planId: string,
 ) {
   return apiJson<ActionPlan>(
     `/api/v1/action-plans/${planId}/reject`,
     {
       method: 'POST',
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }

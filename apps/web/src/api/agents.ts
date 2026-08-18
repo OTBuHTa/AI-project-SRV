@@ -1,6 +1,6 @@
 import {
   apiJson,
-  bearerHeaders,
+  workspaceHeaders,
 } from './http'
 
 export type DockerSummary = {
@@ -65,48 +65,64 @@ export type InventorySummary = {
 
 export function getAgents(
   accessToken: string,
+  workspaceId: string,
 ) {
   return apiJson<Agent[]>(
     '/api/v1/agents',
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }
 
 export function getAgentTelemetry(
   accessToken: string,
+  workspaceId: string,
   agentId: string,
   limit = 60,
 ) {
   return apiJson<TelemetryPoint[]>(
     `/api/v1/agents/${agentId}/telemetry?limit=${limit}`,
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }
 
 export function getResourceHealth(
   accessToken: string,
+  workspaceId: string,
   resourceId: string,
 ) {
   return apiJson<ResourceHealth>(
     `/api/v1/ai/tools/resource-health/${resourceId}`,
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }
 
 export function getInventorySummary(
   accessToken: string,
+  workspaceId: string,
   resourceId: string,
 ) {
   return apiJson<InventorySummary>(
     `/api/v1/inventory/resources/${resourceId}/summary`,
     {
-      headers: bearerHeaders(accessToken),
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
     },
   )
 }
