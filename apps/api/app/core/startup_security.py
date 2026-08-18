@@ -2,6 +2,11 @@ from app.core.config import Settings
 
 
 DEFAULT_JWT_SECRET = "change-me-before-external-access"
+EXAMPLE_JWT_SECRET = (
+    "replace-with-at-least-32-random-bytes-"
+    "before-external-access"
+)
+MIN_JWT_SECRET_BYTES = 32
 
 
 def validate_production_security(
@@ -12,12 +17,20 @@ def validate_production_security(
 
     errors: list[str] = []
 
+    jwt_secret = settings.jwt_secret
+
     if (
-        not settings.jwt_secret
-        or settings.jwt_secret == DEFAULT_JWT_SECRET
+        not jwt_secret
+        or jwt_secret in {
+            DEFAULT_JWT_SECRET,
+            EXAMPLE_JWT_SECRET,
+        }
+        or len(jwt_secret.encode("utf-8"))
+        < MIN_JWT_SECRET_BYTES
     ):
         errors.append(
-            "JWT_SECRET must be set to a strong non-default value"
+            "JWT_SECRET must be a non-default value "
+            "of at least 32 bytes"
         )
 
     if settings.bootstrap_enabled:
