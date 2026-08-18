@@ -6,12 +6,13 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
-PROJECT_PYTHON = ROOT / ".venv" / "bin" / "python"
+PROJECT_VENV = ROOT / ".venv"
+PROJECT_PYTHON = PROJECT_VENV / "bin" / "python"
 
 if (
     PROJECT_PYTHON.is_file()
-    and Path(sys.executable).resolve()
-    != PROJECT_PYTHON.resolve()
+    and Path(sys.prefix).resolve()
+    != PROJECT_VENV.resolve()
 ):
     os.execv(
         str(PROJECT_PYTHON),
