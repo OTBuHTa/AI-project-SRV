@@ -139,3 +139,8 @@ jobs:
             AI_SRV_ENV_FILE=/dev/null \
             docker compose config --format json \
             | python apps/api/scripts/verify_compose_build_identity.py unknown
+
+      - name: Verify Compose runtime lifecycle
+        run: |
+          docker compose config --format json \
+            | python apps/api/scripts/verify_compose_runtime_lifecycle.py
