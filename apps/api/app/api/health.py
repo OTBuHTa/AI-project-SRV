@@ -1,8 +1,10 @@
 from fastapi import APIRouter, HTTPException
 from redis import Redis
 from sqlalchemy import text
+
 from app.core.config import get_settings
 from app.db.session import engine
+from app.version import API_VERSION
 
 router = APIRouter(tags=["system"])
 settings = get_settings()
@@ -10,7 +12,13 @@ settings = get_settings()
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "service": settings.app_name, "environment": settings.app_env}
+    return {
+        "status": "ok",
+        "service": settings.app_name,
+        "environment": settings.app_env,
+        "version": API_VERSION,
+        "build_revision": settings.app_build_revision,
+    }
 
 
 @router.get("/ready")
