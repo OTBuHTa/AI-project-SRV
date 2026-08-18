@@ -125,7 +125,7 @@ jobs:
 
           test "${#EXPECTED_REVISION}" -eq 40
           test "$label_revision" = "$EXPECTED_REVISION"
-          test "$env_revision" = "$EXPECTED_REVISION"\n
+          test "$env_revision" = "$EXPECTED_REVISION"
       - name: Verify Compose build identity wiring
         env:
           PROBE_REVISION: "0123456789abcdef0123456789abcdef01234567"
