@@ -40,11 +40,11 @@ Restrict the service account to the AI-project SRV host wherever possible:
 set [find name="gpt"] group=ai-srv address=<AI_SRV_HOST_IP>/32
 ```
 
-Enable `www-ssl` and use a certificate trusted by the AI-project SRV host. Restrict `www-ssl` to the same host or management network:
+Enable `www-ssl` and use a certificate trusted by the AI-project SRV host. On RouterOS versions that expose `available-from` in `/ip service`, use that field instead of the deprecated `address` field:
 
 ```routeros
 /ip service
-set www-ssl address=<AI_SRV_HOST_IP>/32 certificate=<SERVER_CERTIFICATE> disabled=no
+set [find name="www-ssl"] available-from=<AI_SRV_HOST_IP>/32 certificate=<SERVER_CERTIFICATE> disabled=no
 ```
 
 Do not expose RouterOS REST directly to the public Internet. The public WAN HTTPS port is not required for this integration; AI-project SRV should connect directly to the router's LAN management address.
