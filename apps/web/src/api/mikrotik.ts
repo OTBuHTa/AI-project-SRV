@@ -21,6 +21,12 @@ export type MikroTikStatus = {
   dhcp_clients: MikroTikDhcpClient[]
   interface_count: number
   address_count: number
+  wan_interface: string
+  wan_running: boolean
+  wan_dhcp_bound: boolean
+  wan_address?: string | null
+  expected_wan_ip?: string | null
+  wan_ip_matches_expected?: boolean | null
 }
 
 export type MikroTikSnapshot = {
