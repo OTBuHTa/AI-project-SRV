@@ -4,24 +4,32 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     Role.PLATFORM_OWNER.value: {"*"},
     Role.PLATFORM_ADMIN.value: {
         "workspace.read", "resource.read", "resource.connect", "agent.read", "agent.install",
-        "agent.update", "agent.revoke", "mcp.read", "audit.read",
+        "agent.update", "agent.revoke", "mcp.read", "audit.read", "network.read",
     },
     Role.ORGANIZATION_OWNER.value: {"*"},
     Role.ORGANIZATION_ADMIN.value: {
         "workspace.read", "workspace.manage", "resource.read", "resource.connect",
         "resource.execute", "agent.read", "agent.install", "agent.update", "agent.revoke",
         "mcp.read", "mcp.install", "mcp.execute", "workflow.read", "workflow.create",
-        "workflow.execute", "workflow.approve", "action.read", "action.create", "action.approve", "audit.read", "billing.read",
+        "workflow.execute", "workflow.approve", "action.read", "action.create", "action.approve",
+        "audit.read", "billing.read", "network.read", "network.execute",
     },
     Role.OPERATOR.value: {
         "workspace.read", "resource.read", "resource.execute", "agent.read",
         "workflow.read", "workflow.execute", "action.read", "action.create", "action.approve",
+        "network.read", "network.execute",
     },
-    Role.ANALYST.value: {"workspace.read", "resource.read", "agent.read", "workflow.read", "action.read", "audit.read"},
-    Role.VIEWER.value: {"workspace.read", "resource.read", "agent.read", "workflow.read", "action.read"},
+    Role.ANALYST.value: {
+        "workspace.read", "resource.read", "agent.read", "workflow.read",
+        "action.read", "audit.read", "network.read",
+    },
+    Role.VIEWER.value: {
+        "workspace.read", "resource.read", "agent.read", "workflow.read",
+        "action.read", "network.read",
+    },
     Role.DEVELOPER.value: {
         "workspace.read", "resource.read", "agent.read", "agent.install", "mcp.read",
-        "mcp.install", "mcp.execute", "workflow.read", "workflow.create",
+        "mcp.install", "mcp.execute", "workflow.read", "workflow.create", "network.read",
     },
     Role.BILLING_MANAGER.value: {"workspace.read", "billing.read", "billing.manage"},
 }

@@ -30,6 +30,7 @@ import { AIAssistant } from './pages/AIAssistant'
 import { Audit } from './pages/Audit'
 import { Backups } from './pages/Backups'
 import { Dashboard } from './pages/Dashboard'
+import { Infrastructure } from './pages/Infrastructure'
 import { Notifications } from './pages/Notifications'
 import { Login } from './pages/Login'
 import { Resources } from './pages/Resources'
@@ -186,9 +187,7 @@ function ProtectedShell() {
           />
           <Route
             path="/infrastructure"
-            element={
-              <Placeholder title="Infrastructure" />
-            }
+            element={<Infrastructure />}
           />
           <Route
             path="/resources"
