@@ -20,6 +20,8 @@ def _settings(**overrides):
         "mikrotik_password": "secret",
         "mikrotik_verify_tls": True,
         "mikrotik_timeout_seconds": 2.0,
+        "mikrotik_wan_interface": "ether1",
+        "mikrotik_expected_wan_ip": "198.51.100.2",
     }
     values.update(overrides)
     return Settings(**values)
@@ -41,6 +43,16 @@ def test_plain_http_is_rejected():
         )
 
 
+def test_missing_wan_interface_is_rejected():
+    with pytest.raises(
+        MikroTikConfigurationError,
+        match="mikrotik_wan_interface_required",
+    ):
+        MikroTikClient(
+            _settings(mikrotik_wan_interface="")
+        )
+
+
 def test_status_reads_only_expected_routeros_menus():
     payloads = {
         "/rest/system/identity": [{"name": "home-router"}],
@@ -53,8 +65,8 @@ def test_status_reads_only_expected_routeros_menus():
             }
         ],
         "/rest/interface": [
-            {"name": "ether1"},
-            {"name": "bridge"},
+            {"name": "ether1", "running": "true"},
+            {"name": "bridge", "running": "true"},
         ],
         "/rest/ip/address": [
             {"address": "192.168.88.1/24"}
@@ -100,6 +112,47 @@ def test_status_reads_only_expected_routeros_menus():
     assert status["identity"] == "home-router"
     assert status["default_route_present"] is True
     assert status["dhcp_clients"][0]["status"] == "bound"
+    assert status["wan_interface"] == "ether1"
+    assert status["wan_running"] is True
+    assert status["wan_dhcp_bound"] is True
+    assert status["wan_address"] == "198.51.100.2"
+    assert status["expected_wan_ip"] == "198.51.100.2"
+    assert status["wan_ip_matches_expected"] is True
+
+
+def test_status_reports_wan_ip_drift():
+    payloads = {
+        "/rest/system/identity": [{}],
+        "/rest/system/resource": [{}],
+        "/rest/interface": [
+            {"name": "ether1", "running": "true"}
+        ],
+        "/rest/ip/address": [],
+        "/rest/ip/route": [],
+        "/rest/ip/dhcp-client": [
+            {
+                "interface": "ether1",
+                "status": "bound",
+                "address": "198.51.100.99/24",
+            }
+        ],
+        "/rest/ip/dns": [{}],
+    }
+
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            json=payloads[request.url.path],
+        )
+    )
+
+    with MikroTikClient(
+        _settings(),
+        transport=transport,
+    ) as client:
+        status = client.status()
+
+    assert status["wan_ip_matches_expected"] is False
 
 
 def test_dhcp_renew_uses_routeros_id_not_user_input():
