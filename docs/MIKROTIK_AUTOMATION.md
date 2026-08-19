@@ -19,9 +19,35 @@ AI-project SRV can monitor a MikroTik RouterOS 7 device through the RouterOS RES
 
 Create a dedicated RouterOS user for AI-project SRV. For the current integration the account needs RouterOS `rest-api` and `read` policies. Add `write` only when the allowlisted recovery action is intentionally enabled. User-management rights are not required.
 
-Enable `www-ssl` and use a certificate trusted by the AI-project SRV host. Restrict the service to the management LAN or the AI-project SRV host. Do not expose RouterOS REST directly to the public Internet.
+Do not use RouterOS default `read` or `write` groups for automation because those groups include additional login and diagnostic capabilities. Create a dedicated group instead:
 
-The public WAN HTTPS port does not need to be exposed for this integration. AI-project SRV should connect directly to the router's LAN management address.
+```routeros
+/user group
+add name=ai-srv policy=read,rest-api
+```
+
+When write recovery is intentionally enabled, update the group to:
+
+```routeros
+/user group
+set [find name="ai-srv"] policy=read,write,rest-api
+```
+
+Restrict the service account to the AI-project SRV host wherever possible:
+
+```routeros
+/user
+set [find name="gpt"] group=ai-srv address=<AI_SRV_HOST_IP>/32
+```
+
+Enable `www-ssl` and use a certificate trusted by the AI-project SRV host. Restrict `www-ssl` to the same host or management network:
+
+```routeros
+/ip service
+set www-ssl address=<AI_SRV_HOST_IP>/32 certificate=<SERVER_CERTIFICATE> disabled=no
+```
+
+Do not expose RouterOS REST directly to the public Internet. The public WAN HTTPS port is not required for this integration; AI-project SRV should connect directly to the router's LAN management address.
 
 ## Server configuration
 
