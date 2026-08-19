@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     mikrotik_verify_tls: bool = True
     mikrotik_timeout_seconds: float = 5.0
     mikrotik_allow_write: bool = False
+    mikrotik_wan_interface: str = "ether1"
+    mikrotik_expected_wan_ip: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
