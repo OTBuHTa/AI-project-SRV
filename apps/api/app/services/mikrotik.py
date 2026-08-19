@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from ipaddress import ip_interface
 from typing import Any
 from urllib.parse import urlparse
 
@@ -51,6 +52,19 @@ def _first_record(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _ip_without_prefix(value: Any) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return str(ip_interface(value).ip)
+    except ValueError:
+        return value.split("/", 1)[0] or None
+
+
+def _routeros_true(value: Any) -> bool:
+    return value is True or value == "true" or value == "yes"
+
+
 class MikroTikClient:
     """Restricted RouterOS REST client used by AI-project SRV."""
 
@@ -83,6 +97,10 @@ class MikroTikClient:
         if not self.settings.mikrotik_password:
             raise MikroTikConfigurationError(
                 "mikrotik_password_required"
+            )
+        if not self.settings.mikrotik_wan_interface:
+            raise MikroTikConfigurationError(
+                "mikrotik_wan_interface_required"
             )
 
         self._base_url = f"{base_url}/rest"
@@ -191,6 +209,36 @@ class MikroTikClient:
             for row in snapshot.dhcp_clients
         ]
 
+        wan_interface = self.settings.mikrotik_wan_interface
+        wan_dhcp = next(
+            (
+                row
+                for row in snapshot.dhcp_clients
+                if row.get("interface") == wan_interface
+            ),
+            {},
+        )
+        wan_interface_state = next(
+            (
+                row
+                for row in snapshot.interfaces
+                if row.get("name") == wan_interface
+            ),
+            {},
+        )
+        wan_address = _ip_without_prefix(
+            wan_dhcp.get("address")
+        )
+        expected_wan_ip = (
+            self.settings.mikrotik_expected_wan_ip.strip()
+            or None
+        )
+        wan_ip_matches_expected = (
+            None
+            if expected_wan_ip is None
+            else wan_address == expected_wan_ip
+        )
+
         return {
             "connected": True,
             "identity": snapshot.identity.get("name"),
@@ -202,6 +250,14 @@ class MikroTikClient:
             "dhcp_clients": dhcp_states,
             "interface_count": len(snapshot.interfaces),
             "address_count": len(snapshot.addresses),
+            "wan_interface": wan_interface,
+            "wan_running": _routeros_true(
+                wan_interface_state.get("running")
+            ),
+            "wan_dhcp_bound": wan_dhcp.get("status") == "bound",
+            "wan_address": wan_address,
+            "expected_wan_ip": expected_wan_ip,
+            "wan_ip_matches_expected": wan_ip_matches_expected,
         }
 
     def renew_dhcp(self, interface: str) -> dict[str, Any]:
