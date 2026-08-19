@@ -186,13 +186,60 @@ export function Infrastructure() {
               <div className="agent-title">
                 <RefreshCcw size={20} />
                 <div>
-                  <strong>WAN DHCP</strong>
+                  <strong>WAN</strong>
                   <small>
-                    Allowlisted recovery action
+                    DHCP and public IP guard
                   </small>
                 </div>
               </div>
+
+              {status.data.wan_running
+                && status.data.wan_dhcp_bound
+                && status.data
+                  .wan_ip_matches_expected
+                  !== false ? (
+                <CheckCircle2 size={19} />
+              ) : (
+                <TriangleAlert size={19} />
+              )}
             </header>
+
+            <div className="inventory-kinds">
+              <span>
+                Interface: {status.data.wan_interface}
+              </span>
+              <span>
+                Link: {
+                  status.data.wan_running
+                    ? 'running'
+                    : 'down'
+                }
+              </span>
+              <span>
+                DHCP: {
+                  status.data.wan_dhcp_bound
+                    ? 'bound'
+                    : 'not bound'
+                }
+              </span>
+              <span>
+                WAN IP: {
+                  status.data.wan_address ?? '—'
+                }
+              </span>
+              {status.data.expected_wan_ip && (
+                <span>
+                  Expected IP: {
+                    status.data.expected_wan_ip
+                  } — {
+                    status.data
+                      .wan_ip_matches_expected
+                      ? 'match'
+                      : 'changed'
+                  }
+                </span>
+              )}
+            </div>
 
             {status.data.dhcp_clients.length
               === 0 && (
