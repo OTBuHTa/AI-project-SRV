@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     auth_rate_limit_ip_attempts: int = 20
     auth_rate_limit_account_attempts: int = 10
     forwarded_allow_ips: str = "127.0.0.1"
+    mikrotik_enabled: bool = False
+    mikrotik_base_url: str = ""
+    mikrotik_username: str = ""
+    mikrotik_password: str = ""
+    mikrotik_verify_tls: bool = True
+    mikrotik_timeout_seconds: float = 5.0
+    mikrotik_allow_write: bool = False
+    mikrotik_wan_interface: str = "ether1"
+    mikrotik_expected_wan_ip: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
