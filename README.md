@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.2.4-alpha` — Build Provenance CI Hardening.
+`v0.2.5-alpha` — MikroTik Automation + Project Operations.
 
 ## Architecture principles
 - AI Core runs on the workstation.
