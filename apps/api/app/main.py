@@ -16,6 +16,7 @@ from app.api.v1.audit import router as audit_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.backups import router as backups_router
 from app.api.v1.inventory import router as inventory_router
+from app.api.v1.mikrotik import router as mikrotik_router
 from app.api.v1.monitoring import router as monitoring_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.workspaces import router as workspaces_router
@@ -66,6 +67,7 @@ async def _status_loop():
         _run_agent_lifecycle_iteration()
         await asyncio.sleep(30)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_production_security(settings)
@@ -79,6 +81,7 @@ async def lifespan(app: FastAPI):
             await task
         except asyncio.CancelledError:
             pass
+
 
 app = FastAPI(title=settings.app_name, version=API_VERSION, lifespan=lifespan)
 app.add_exception_handler(
@@ -101,6 +104,7 @@ app.include_router(ai_actions_router)
 app.include_router(backups_router)
 app.include_router(notifications_router)
 app.include_router(inventory_router)
+app.include_router(mikrotik_router)
 
 
 @app.get("/api/v1")
