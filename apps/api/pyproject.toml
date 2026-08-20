@@ -1,6 +1,6 @@
 [project]
 name = "ai-project-srv-api"
-version = "0.2.5a0"
+version = "0.2.6a0"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.116,<1",

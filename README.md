@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.2.5-alpha` — MikroTik Automation + Project Operations.
+`v0.2.6-alpha` — Live Operations Dashboard.
 
 ## Architecture principles
 - AI Core runs on the workstation.
