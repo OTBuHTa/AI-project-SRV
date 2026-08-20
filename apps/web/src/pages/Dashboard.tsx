@@ -1,8 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
+  Archive,
+  Bell,
   Bot,
   CheckCircle2,
+  ClipboardList,
   Cpu,
   Database,
   Server,
@@ -13,6 +16,18 @@ import {
   getAgents,
   type Agent,
 } from '../api/agents'
+import {
+  getAuditEvents,
+} from '../api/audit'
+import {
+  getBackupHealth,
+  getBackupSchedule,
+  getBackupStatus,
+  getBackupStorageHealth,
+} from '../api/backups'
+import {
+  getNotificationDeliveryHealth,
+} from '../api/notifications'
 import {
   getApiInfo,
   getHealth,
@@ -90,6 +105,23 @@ function percentLabel(
     : `${Math.round(value)}%`
 }
 
+function statusHealthy(
+  value: string | undefined,
+) {
+  return value === 'healthy'
+    || value === 'ok'
+}
+
+function formatDate(
+  value: string | null | undefined,
+) {
+  if (!value) {
+    return '—'
+  }
+
+  return new Date(value).toLocaleString()
+}
+
 export function Dashboard() {
   const auth = useAuth()
 
@@ -111,6 +143,84 @@ export function Dashboard() {
       getAgents(
         token!,
         workspaceId!,
+      ),
+    enabled: Boolean(
+      token && workspaceId,
+    ),
+    refetchInterval: 15_000,
+  })
+
+  const backups = useQuery({
+    queryKey: [
+      'dashboard',
+      'backups',
+      workspaceId,
+    ],
+    queryFn: async () => {
+      const [
+        status,
+        health,
+        storage,
+        schedule,
+      ] = await Promise.all([
+        getBackupStatus(
+          token!,
+          workspaceId!,
+        ),
+        getBackupHealth(
+          token!,
+          workspaceId!,
+        ),
+        getBackupStorageHealth(
+          token!,
+          workspaceId!,
+        ),
+        getBackupSchedule(
+          token!,
+          workspaceId!,
+        ),
+      ])
+
+      return {
+        status,
+        health,
+        storage,
+        schedule,
+      }
+    },
+    enabled: Boolean(
+      token && workspaceId,
+    ),
+    refetchInterval: 15_000,
+  })
+
+  const notificationHealth = useQuery({
+    queryKey: [
+      'notification-health',
+      workspaceId,
+    ],
+    queryFn: () =>
+      getNotificationDeliveryHealth(
+        token!,
+        workspaceId!,
+      ),
+    enabled: Boolean(
+      token && workspaceId,
+    ),
+    refetchInterval: 10_000,
+  })
+
+  const audit = useQuery({
+    queryKey: [
+      'dashboard',
+      'audit',
+      workspaceId,
+    ],
+    queryFn: () =>
+      getAuditEvents(
+        token!,
+        workspaceId!,
+        5,
       ),
     enabled: Boolean(
       token && workspaceId,
@@ -223,6 +333,31 @@ export function Dashboard() {
       0,
     )
 
+  const backupData =
+    backups.data
+
+  const backupHealthy =
+    backups.isSuccess
+    && statusHealthy(
+      backupData?.status.status,
+    )
+    && statusHealthy(
+      backupData?.health.status,
+    )
+    && backupData?.storage.healthy === true
+
+  const notificationHealthy =
+    notificationHealth.isSuccess
+    && statusHealthy(
+      notificationHealth.data?.status,
+    )
+
+  const notificationCounts =
+    notificationHealth.data?.total
+
+  const auditEvents =
+    audit.data ?? []
+
   return (
     <>
       <header className="page-header">
@@ -305,6 +440,48 @@ export function Dashboard() {
             realtimeStatus === 'connected'
           }
           detail="Workspace telemetry"
+        />
+
+        <StatusCard
+          title="Backups"
+          value={
+            backups.isLoading
+              ? 'Loading'
+              : backups.isError
+                ? 'Unavailable'
+                : backupHealthy
+                  ? 'Healthy'
+                  : 'Degraded'
+          }
+          healthy={backupHealthy}
+          detail={
+            backupData
+              ? `${backupData.status.failed_jobs} failed jobs · storage ${
+                  backupData.storage.healthy
+                    ? 'healthy'
+                    : 'unhealthy'
+                }`
+              : undefined
+          }
+        />
+
+        <StatusCard
+          title="Notifications"
+          value={
+            notificationHealth.isLoading
+              ? 'Loading'
+              : notificationHealth.isError
+                ? 'Unavailable'
+                : notificationHealthy
+                  ? 'Healthy'
+                  : 'Degraded'
+          }
+          healthy={notificationHealthy}
+          detail={
+            notificationCounts
+              ? `${notificationCounts.failed} failed · ${notificationCounts.pending} pending`
+              : undefined
+          }
         />
       </section>
 
@@ -453,6 +630,179 @@ export function Dashboard() {
                   ))}
               </>
             )}
+        </article>
+
+        <article className="panel">
+          <div className="panel__title">
+            <Archive size={20} />
+            <h2>Backup protection</h2>
+          </div>
+
+          {backups.isLoading && (
+            <div className="placeholder">
+              Loading backup health…
+            </div>
+          )}
+
+          {backups.isError && (
+            <div className="placeholder">
+              Backup health unavailable.
+            </div>
+          )}
+
+          {backupData && (
+            <>
+              <div className="readiness-row">
+                <span>Status</span>
+                <strong>
+                  {backupData.status.status.toUpperCase()}
+                </strong>
+              </div>
+
+              <div className="readiness-row">
+                <span>Storage</span>
+                <strong>
+                  {backupData.storage.healthy
+                    ? 'HEALTHY'
+                    : 'UNHEALTHY'}
+                </strong>
+              </div>
+
+              <div className="readiness-row">
+                <span>Failed jobs</span>
+                <strong>
+                  {backupData.status.failed_jobs}
+                </strong>
+              </div>
+
+              <div className="readiness-row">
+                <span>Last verified</span>
+                <strong>
+                  {formatDate(
+                    backupData.health
+                      .last_verified_at,
+                  )}
+                </strong>
+              </div>
+
+              <div className="readiness-row">
+                <span>Schedule</span>
+                <strong>
+                  {backupData.schedule
+                    ? backupData.schedule.enabled
+                      ? 'ENABLED'
+                      : 'DISABLED'
+                    : 'NOT CONFIGURED'}
+                </strong>
+              </div>
+            </>
+          )}
+        </article>
+
+        <article className="panel">
+          <div className="panel__title">
+            <Bell size={20} />
+            <h2>Notification delivery</h2>
+          </div>
+
+          {notificationHealth.isLoading && (
+            <div className="placeholder">
+              Loading delivery health…
+            </div>
+          )}
+
+          {notificationHealth.isError && (
+            <div className="placeholder">
+              Delivery health unavailable.
+            </div>
+          )}
+
+          {notificationHealth.data && (
+            <>
+              <div className="readiness-row">
+                <span>Status</span>
+                <strong>
+                  {notificationHealth.data.status
+                    .toUpperCase()}
+                </strong>
+              </div>
+
+              <div className="readiness-row">
+                <span>Failed</span>
+                <strong>
+                  {notificationHealth.data
+                    .total.failed}
+                </strong>
+              </div>
+
+              <div className="readiness-row">
+                <span>Retryable</span>
+                <strong>
+                  {notificationHealth.data
+                    .total.retryable_failed}
+                </strong>
+              </div>
+
+              <div className="readiness-row">
+                <span>Stale sending</span>
+                <strong>
+                  {notificationHealth.data
+                    .total.stale_sending}
+                </strong>
+              </div>
+
+              <div className="readiness-row">
+                <span>Issues</span>
+                <strong>
+                  {notificationHealth.data
+                    .issues.length}
+                </strong>
+              </div>
+            </>
+          )}
+        </article>
+
+        <article className="panel">
+          <div className="panel__title">
+            <ClipboardList size={20} />
+            <h2>Recent audit</h2>
+          </div>
+
+          {audit.isLoading && (
+            <div className="placeholder">
+              Loading audit events…
+            </div>
+          )}
+
+          {audit.isError && (
+            <div className="placeholder">
+              Audit history unavailable.
+            </div>
+          )}
+
+          {audit.isSuccess
+            && auditEvents.length === 0
+            && (
+              <div className="placeholder">
+                No audit events.
+              </div>
+            )}
+
+          {auditEvents.map((event) => (
+            <div
+              className="readiness-row"
+              key={event.id}
+            >
+              <span>
+                {event.action}
+              </span>
+              <strong>
+                {formatDate(
+                  event.created_at,
+                )}
+              </strong>
+            </div>
+          ))}
         </article>
 
         <article className="panel">
