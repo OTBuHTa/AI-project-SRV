@@ -17,20 +17,20 @@ AI-project SRV can monitor a MikroTik RouterOS 7 device through the RouterOS RES
 
 ## RouterOS preparation
 
-Create a dedicated RouterOS user for AI-project SRV. For the current integration the account needs RouterOS `rest-api` and `read` policies. Add `write` only when the allowlisted recovery action is intentionally enabled. User-management rights are not required.
+Create a dedicated RouterOS user for AI-project SRV. On the tested RouterOS 7.24 deployment the read-only REST integration requires `read`, `api`, and `rest-api`. Without `api`, the tested REST read returned `std failure: not allowed (9)`. Revalidate this permission set after RouterOS upgrades. Add `write` only when the allowlisted recovery action is intentionally enabled. User-management rights are not required.
 
 Do not use RouterOS default `read` or `write` groups for automation because those groups include additional login and diagnostic capabilities. Create a dedicated group instead:
 
 ```routeros
 /user group
-add name=ai-srv policy=read,rest-api
+add name=ai-srv policy=read,api,rest-api
 ```
 
 When write recovery is intentionally enabled, update the group to:
 
 ```routeros
 /user group
-set [find name="ai-srv"] policy=read,write,rest-api
+set [find name="ai-srv"] policy=read,write,api,rest-api
 ```
 
 Restrict the service account to the AI-project SRV host wherever possible:
@@ -59,6 +59,7 @@ MIKROTIK_BASE_URL=https://192.168.88.1
 MIKROTIK_USERNAME=ai-srv
 MIKROTIK_PASSWORD=replace-me
 MIKROTIK_VERIFY_TLS=true
+MIKROTIK_CA_FILE=
 MIKROTIK_TIMEOUT_SECONDS=5
 MIKROTIK_ALLOW_WRITE=false
 MIKROTIK_WAN_INTERFACE=ether1
@@ -66,6 +67,10 @@ MIKROTIK_EXPECTED_WAN_IP=
 ```
 
 `MIKROTIK_EXPECTED_WAN_IP` is optional. When set locally, the status endpoint reports whether the DHCP-derived WAN address matches the expected value. Do not place site-specific addresses or credentials in the committed example files.
+
+When RouterOS uses a private CA, set `MIKROTIK_CA_FILE` to the PEM CA certificate path. The CA is added only to the MikroTik TLS context while the normal platform trust roots remain available.
+
+For Docker Compose, use the optional `docker-compose.mikrotik.yml` override and set `MIKROTIK_CA_HOST_PATH` to the host CA certificate. The certificate is mounted read-only into the API container.
 
 Start with `MIKROTIK_ALLOW_WRITE=false`. The Infrastructure page will provide monitoring while mutating recovery operations remain blocked.
 

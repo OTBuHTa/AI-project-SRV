@@ -5,10 +5,11 @@ import pytest
 
 from app.core.config import Settings
 from app.services.mikrotik import (
+    MikroTikClient,
     MikroTikConfigurationError,
     MikroTikDisabledError,
     MikroTikError,
-    MikroTikClient,
+    _build_tls_verify,
 )
 
 
@@ -50,6 +51,62 @@ def test_missing_wan_interface_is_rejected():
     ):
         MikroTikClient(
             _settings(mikrotik_wan_interface="")
+        )
+
+
+def test_tls_verify_true_without_custom_ca():
+    result = _build_tls_verify(_settings())
+    assert result is True
+
+
+def test_tls_verify_false_disables_verification():
+    result = _build_tls_verify(
+        _settings(
+            mikrotik_verify_tls=False,
+            mikrotik_ca_file="/unused/ca.crt",
+        )
+    )
+    assert result is False
+
+
+def test_custom_ca_file_is_loaded(monkeypatch):
+    loaded = []
+
+    class FakeContext:
+        def load_verify_locations(self, *, cafile):
+            loaded.append(cafile)
+
+    context = FakeContext()
+
+    monkeypatch.setattr(
+        "app.services.mikrotik.ssl.create_default_context",
+        lambda: context,
+    )
+
+    result = _build_tls_verify(
+        _settings(mikrotik_ca_file="/run/mikrotik/ca.crt")
+    )
+
+    assert result is context
+    assert loaded == ["/run/mikrotik/ca.crt"]
+
+
+def test_invalid_custom_ca_file_is_rejected(monkeypatch):
+    class FakeContext:
+        def load_verify_locations(self, *, cafile):
+            raise OSError(cafile)
+
+    monkeypatch.setattr(
+        "app.services.mikrotik.ssl.create_default_context",
+        FakeContext,
+    )
+
+    with pytest.raises(
+        MikroTikConfigurationError,
+        match="mikrotik_ca_file_invalid",
+    ):
+        _build_tls_verify(
+            _settings(mikrotik_ca_file="/missing/ca.crt")
         )
 
 

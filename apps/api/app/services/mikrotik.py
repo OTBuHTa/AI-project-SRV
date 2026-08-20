@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ssl
 from dataclasses import dataclass
 from ipaddress import ip_interface
 from typing import Any
@@ -20,6 +21,28 @@ class MikroTikDisabledError(MikroTikError):
 
 class MikroTikConfigurationError(MikroTikError):
     """Raised when RouterOS automation settings are unsafe or incomplete."""
+
+
+def _build_tls_verify(
+    settings: Settings,
+) -> bool | ssl.SSLContext:
+    if not settings.mikrotik_verify_tls:
+        return False
+
+    if not settings.mikrotik_ca_file:
+        return True
+
+    context = ssl.create_default_context()
+    try:
+        context.load_verify_locations(
+            cafile=settings.mikrotik_ca_file
+        )
+    except (OSError, ssl.SSLError, ValueError) as exc:
+        raise MikroTikConfigurationError(
+            "mikrotik_ca_file_invalid"
+        ) from exc
+
+    return context
 
 
 @dataclass(frozen=True)
@@ -110,7 +133,7 @@ class MikroTikClient:
                 self.settings.mikrotik_password,
             ),
             timeout=self.settings.mikrotik_timeout_seconds,
-            verify=self.settings.mikrotik_verify_tls,
+            verify=_build_tls_verify(self.settings),
             transport=transport,
         )
 
