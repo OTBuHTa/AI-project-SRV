@@ -10,10 +10,16 @@ import {
 } from 'lucide-react'
 
 import {
+  getAgents,
+  type Agent,
+} from '../api/agents'
+import {
   getApiInfo,
   getHealth,
   getReady,
 } from '../api/system'
+import { useAuth } from '../auth/useAuth'
+import { useWorkspaceTelemetry } from '../realtime/useWorkspaceTelemetry'
 
 type StatusCardProps = {
   title: string
@@ -46,7 +52,72 @@ function StatusCard({
   )
 }
 
+function averageMetric(
+  agents: Agent[],
+  metric:
+    | 'cpu_percent'
+    | 'memory_percent'
+    | 'disk_percent',
+) {
+  const values = agents
+    .map(
+      (agent) =>
+        agent.metrics?.[metric],
+    )
+    .filter(
+      (value): value is number =>
+        typeof value === 'number',
+    )
+
+  if (values.length === 0) {
+    return null
+  }
+
+  return (
+    values.reduce(
+      (total, value) => total + value,
+      0,
+    )
+    / values.length
+  )
+}
+
+function percentLabel(
+  value: number | null,
+) {
+  return value === null
+    ? '—'
+    : `${Math.round(value)}%`
+}
+
 export function Dashboard() {
+  const auth = useAuth()
+
+  const token =
+    auth.tokens?.access_token
+
+  const workspaceId =
+    auth.workspace?.id
+
+  const realtimeStatus =
+    useWorkspaceTelemetry()
+
+  const agents = useQuery({
+    queryKey: [
+      'agents',
+      workspaceId,
+    ],
+    queryFn: () =>
+      getAgents(
+        token!,
+        workspaceId!,
+      ),
+    enabled: Boolean(
+      token && workspaceId,
+    ),
+    refetchInterval: 15_000,
+  })
+
   const api = useQuery({
     queryKey: ['system', 'api'],
     queryFn: getApiInfo,
@@ -77,6 +148,80 @@ export function Dashboard() {
 
   const redisHealthy =
     ready.data?.checks.redis === true
+
+  const agentList =
+    agents.data ?? []
+
+  const onlineAgentList =
+    agentList.filter(
+      (agent) =>
+        agent.status === 'online'
+        || agent.status === 'healthy',
+    )
+
+  const onlineAgents =
+    onlineAgentList.length
+
+  const reportingAgents =
+    onlineAgentList.filter(
+      (agent) =>
+        agent.metrics !== null,
+    ).length
+
+  const agentsHealthy =
+    agents.isSuccess
+    && agentList.length > 0
+    && onlineAgents === agentList.length
+
+  const averageCpu =
+    averageMetric(
+      onlineAgentList,
+      'cpu_percent',
+    )
+
+  const averageMemory =
+    averageMetric(
+      onlineAgentList,
+      'memory_percent',
+    )
+
+  const averageDisk =
+    averageMetric(
+      onlineAgentList,
+      'disk_percent',
+    )
+
+  const dockerObserved =
+    onlineAgentList.some(
+      (agent) =>
+        typeof agent.metrics?.docker
+          ?.containers_total
+        === 'number',
+    )
+
+  const dockerRunning =
+    onlineAgentList.reduce(
+      (total, agent) =>
+        total
+        + (
+          agent.metrics?.docker
+            ?.containers_running
+          ?? 0
+        ),
+      0,
+    )
+
+  const dockerTotal =
+    onlineAgentList.reduce(
+      (total, agent) =>
+        total
+        + (
+          agent.metrics?.docker
+            ?.containers_total
+          ?? 0
+        ),
+      0,
+    )
 
   return (
     <>
@@ -131,6 +276,36 @@ export function Dashboard() {
           value={redisHealthy ? 'Ready' : 'Not ready'}
           healthy={redisHealthy}
         />
+
+        <StatusCard
+          title="Agents"
+          value={
+            agents.isLoading
+              ? 'Loading'
+              : agents.isError
+                ? 'Unavailable'
+                : `${onlineAgents} / ${agentList.length} online`
+          }
+          healthy={agentsHealthy}
+          detail={
+            agents.isSuccess
+              ? `${reportingAgents} reporting telemetry`
+              : undefined
+          }
+        />
+
+        <StatusCard
+          title="Realtime"
+          value={
+            realtimeStatus === 'connected'
+              ? 'Connected'
+              : realtimeStatus
+          }
+          healthy={
+            realtimeStatus === 'connected'
+          }
+          detail="Workspace telemetry"
+        />
       </section>
 
       <section className="panel-grid">
@@ -153,6 +328,17 @@ export function Dashboard() {
               <dt>Environment</dt>
               <dd>{health.data?.environment ?? '—'}</dd>
             </div>
+            <div>
+              <dt>Build</dt>
+              <dd>
+                {api.data?.build_revision
+                  ? api.data.build_revision.slice(
+                      0,
+                      12,
+                    )
+                  : '—'}
+              </dd>
+            </div>
           </dl>
         </article>
 
@@ -162,8 +348,36 @@ export function Dashboard() {
             <h2>Infrastructure</h2>
           </div>
 
-          <div className="placeholder">
-            Resource telemetry will appear here next.
+          <div className="readiness-row">
+            <span>CPU average</span>
+            <strong>
+              {percentLabel(averageCpu)}
+            </strong>
+          </div>
+
+          <div className="readiness-row">
+            <span>Memory average</span>
+            <strong>
+              {percentLabel(
+                averageMemory,
+              )}
+            </strong>
+          </div>
+
+          <div className="readiness-row">
+            <span>Disk average</span>
+            <strong>
+              {percentLabel(averageDisk)}
+            </strong>
+          </div>
+
+          <div className="readiness-row">
+            <span>Docker containers</span>
+            <strong>
+              {dockerObserved
+                ? `${dockerRunning} / ${dockerTotal}`
+                : '—'}
+            </strong>
           </div>
         </article>
 
@@ -173,9 +387,72 @@ export function Dashboard() {
             <h2>Agents</h2>
           </div>
 
-          <div className="placeholder">
-            Linux Agent status will appear here next.
-          </div>
+          {agents.isLoading && (
+            <div className="placeholder">
+              Loading agents…
+            </div>
+          )}
+
+          {agents.isError && (
+            <div className="placeholder">
+              Agent status unavailable.
+            </div>
+          )}
+
+          {agents.isSuccess
+            && agentList.length === 0
+            && (
+              <div className="placeholder">
+                No enrolled agents.
+              </div>
+            )}
+
+          {agents.isSuccess
+            && agentList.length > 0
+            && (
+              <>
+                <div className="readiness-row">
+                  <span>Online</span>
+                  <strong>
+                    {onlineAgents}
+                    {' / '}
+                    {agentList.length}
+                  </strong>
+                </div>
+
+                <div className="readiness-row">
+                  <span>Telemetry</span>
+                  <strong>
+                    {reportingAgents}
+                    {' / '}
+                    {agentList.length}
+                  </strong>
+                </div>
+
+                <div className="readiness-row">
+                  <span>Realtime</span>
+                  <strong>
+                    {realtimeStatus.toUpperCase()}
+                  </strong>
+                </div>
+
+                {agentList
+                  .slice(0, 4)
+                  .map((agent) => (
+                    <div
+                      className="readiness-row"
+                      key={agent.id}
+                    >
+                      <span>
+                        {agent.hostname}
+                      </span>
+                      <strong>
+                        {agent.status.toUpperCase()}
+                      </strong>
+                    </div>
+                  ))}
+              </>
+            )}
         </article>
 
         <article className="panel">

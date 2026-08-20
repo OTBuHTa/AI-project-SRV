@@ -1,6 +1,7 @@
 export type ApiInfo = {
   name: string
   version: string
+  build_revision: string
   phase: string
 }
 
@@ -8,6 +9,8 @@ export type HealthStatus = {
   status: string
   service: string
   environment: string
+  version: string
+  build_revision: string
 }
 
 export type ReadyStatus = {
