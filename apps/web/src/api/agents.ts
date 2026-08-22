@@ -112,6 +112,28 @@ export function rotateAgentToken(
   )
 }
 
+export type AgentRevokeResponse = {
+  agent_id: string
+  revoked_at: string
+}
+
+export function revokeAgent(
+  accessToken: string,
+  workspaceId: string,
+  agentId: string,
+) {
+  return apiJson<AgentRevokeResponse>(
+    `/api/v1/agents/${agentId}/revoke`,
+    {
+      method: 'POST',
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
 export function getAgents(
   accessToken: string,
   workspaceId: string,
