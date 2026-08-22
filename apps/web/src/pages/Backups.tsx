@@ -17,6 +17,7 @@ import {
   createBackup,
   getActiveBackupAlertEvents,
   getBackupAlertEvents,
+  getBackupAlerts,
   getBackupHealth,
   getBackupJobs,
   getBackupProtection,
@@ -76,6 +77,7 @@ export function Backups() {
         storage,
         schedule,
         protection,
+        alerts,
         activeAlerts,
         alertHistory,
       ] = await Promise.all([
@@ -85,6 +87,7 @@ export function Backups() {
         getBackupStorageHealth(token!, workspaceId!),
         getBackupSchedule(token!, workspaceId!),
         getBackupProtection(token!, workspaceId!),
+        getBackupAlerts(token!, workspaceId!),
         getActiveBackupAlertEvents(
           token!,
           workspaceId!,
@@ -102,6 +105,7 @@ export function Backups() {
         storage,
         schedule,
         protection,
+        alerts,
         activeAlerts,
         alertHistory,
       }
@@ -353,6 +357,90 @@ export function Backups() {
             )}
           </div>
         </article>
+      </section>
+
+      <section className="panel ops-panel">
+        <div className="ops-title">
+          <TriangleAlert size={18} />
+          <div>
+            <strong>
+              Backup alert evaluation
+            </strong>
+            <small>
+              Current evaluated backup alerts
+            </small>
+          </div>
+        </div>
+
+        {!data && (
+          <div className="ops-empty">
+            Loading backup alert evaluation…
+          </div>
+        )}
+
+        {data && (
+          <div className="ops-details">
+            <div>
+              <span>Status</span>
+              <strong>
+                {data.alerts.status}
+              </strong>
+            </div>
+
+            <div>
+              <span>Generated</span>
+              <strong>
+                {formatDate(
+                  data.alerts.generated_at,
+                )}
+              </strong>
+            </div>
+
+            <div>
+              <span>Alerts</span>
+              <strong>
+                {data.alerts.alerts.length}
+              </strong>
+            </div>
+          </div>
+        )}
+
+        {data
+          && data.alerts.alerts.length === 0
+          && (
+            <div className="ops-empty">
+              No evaluated backup alerts.
+            </div>
+          )}
+
+        <div className="ops-list">
+          {data?.alerts.alerts.map(
+            (alert) => (
+              <article
+                className="ops-row"
+                key={`${alert.code}-${alert.severity}`}
+              >
+                <div className="ops-row__main">
+                  <div className="ops-row__heading">
+                    <TriangleAlert size={16} />
+
+                    <strong>
+                      {alert.code}
+                    </strong>
+
+                    <span className="status-badge">
+                      {alert.severity}
+                    </span>
+                  </div>
+                </div>
+
+                <span>
+                  {alert.message}
+                </span>
+              </article>
+            ),
+          )}
+        </div>
       </section>
 
       <section className="panel ops-panel">
