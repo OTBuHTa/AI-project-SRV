@@ -1,7 +1,11 @@
 import {
+  Activity,
   Boxes,
   CheckCircle2,
   Container,
+  Cpu,
+  HardDrive,
+  MemoryStick,
   Server,
   TriangleAlert,
 } from 'lucide-react'
@@ -9,6 +13,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import {
   getAgents,
+  getAgentTelemetry,
   getInventorySummary,
   getResourceHealth,
   type Agent,
@@ -53,6 +58,25 @@ function ResourceCard({
       ),
     refetchInterval: 30_000,
   })
+
+  const telemetry = useQuery({
+    queryKey: [
+      'agent-telemetry',
+      workspaceId,
+      agent.id,
+    ],
+    queryFn: () =>
+      getAgentTelemetry(
+        accessToken,
+        workspaceId,
+        agent.id,
+        12,
+      ),
+    refetchInterval: 30_000,
+  })
+
+  const latestTelemetry =
+    telemetry.data?.at(-1)
 
   const healthy =
     health.data?.severity === 'ok'
@@ -111,6 +135,56 @@ function ResourceCard({
         </div>
       </div>
 
+      <div className="resource-stats">
+        <div>
+          <Cpu size={17} />
+          <span>CPU</span>
+          <strong>
+            {typeof latestTelemetry
+              ?.cpu_percent === 'number'
+              ? `${Math.round(
+                  latestTelemetry.cpu_percent,
+                )}%`
+              : '—'}
+          </strong>
+        </div>
+
+        <div>
+          <MemoryStick size={17} />
+          <span>Memory</span>
+          <strong>
+            {typeof latestTelemetry
+              ?.memory_percent === 'number'
+              ? `${Math.round(
+                  latestTelemetry.memory_percent,
+                )}%`
+              : '—'}
+          </strong>
+        </div>
+
+        <div>
+          <HardDrive size={17} />
+          <span>Disk</span>
+          <strong>
+            {typeof latestTelemetry
+              ?.disk_percent === 'number'
+              ? `${Math.round(
+                  latestTelemetry.disk_percent,
+                )}%`
+              : '—'}
+          </strong>
+        </div>
+
+        <div>
+          <Activity size={17} />
+          <span>Load 1m</span>
+          <strong>
+            {latestTelemetry?.load_1m
+              ?? '—'}
+          </strong>
+        </div>
+      </div>
+
       {health.data?.findings
         && health.data.findings.length > 0
         && (
@@ -134,6 +208,34 @@ function ResourceCard({
               {kind}: {count}
             </span>
           ))}
+
+          {Object.entries(
+            inventory.data.lifecycle,
+          ).map(([state, count]) => (
+            <span key={`lifecycle-${state}`}>
+              {state}: {count}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {telemetry.isSuccess && (
+        <div className="inventory-kinds">
+          <span>
+            Telemetry points: {
+              telemetry.data.length
+            }
+          </span>
+
+          <span>
+            Last sample: {
+              latestTelemetry
+                ? new Date(
+                    latestTelemetry.timestamp,
+                  ).toLocaleString()
+                : '—'
+            }
+          </span>
         </div>
       )}
     </article>
