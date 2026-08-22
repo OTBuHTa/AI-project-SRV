@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.3.2-alpha` — Isolated and repeatable database migration execution.
+`v0.3.3-alpha` — Notification delivery filtering and cursor-based exploration.
 
 ## Architecture principles
 - AI Core runs on the workstation.
