@@ -68,6 +68,46 @@ export type NotificationDeliveryCount = {
   agent_lifecycle: number
 }
 
+export type NotificationDeliveryFilters = {
+  source?: 'backup' | 'agent_lifecycle'
+  status?:
+    | 'pending'
+    | 'sending'
+    | 'delivered'
+    | 'failed'
+    | 'canceled'
+  problem?:
+    | 'retryable_failed'
+    | 'exhausted_failed'
+    | 'stale_sending'
+  destination_id?: string
+  channel?: string
+  cursor?: string
+}
+
+function deliverySearchParams(
+  filters: NotificationDeliveryFilters,
+) {
+  const params = new URLSearchParams()
+
+  if (filters.source) {
+    params.set('source', filters.source)
+  }
+
+  if (filters.destination_id) {
+    params.set(
+      'destination_id',
+      filters.destination_id,
+    )
+  }
+
+  if (filters.channel) {
+    params.set('channel', filters.channel)
+  }
+
+  return params
+}
+
 export type NotificationDestination = {
   id: string
   workspace_id: string
@@ -108,10 +148,47 @@ export function getNotificationDeliveryHealth(
 export function getNotificationDeliveries(
   accessToken: string,
   workspaceId: string,
+  filters: NotificationDeliveryFilters = {},
   limit = 50,
 ) {
+  const params = deliverySearchParams(filters)
+
+  if (filters.status) {
+    params.set('status', filters.status)
+  }
+
+  if (filters.cursor) {
+    params.set('cursor', filters.cursor)
+  }
+
+  params.set('limit', String(limit))
+
   return apiJson<NotificationDeliveryPage>(
-    `/api/v1/notifications/deliveries/page?limit=${limit}`,
+    `/api/v1/notifications/deliveries/page?${params.toString()}`,
+    {
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
+export function getNotificationDeliveryCount(
+  accessToken: string,
+  workspaceId: string,
+  filters: NotificationDeliveryFilters = {},
+) {
+  const params = deliverySearchParams(filters)
+
+  if (filters.status) {
+    params.set('status', filters.status)
+  }
+
+  const query = params.toString()
+
+  return apiJson<NotificationDeliveryCount>(
+    `/api/v1/notifications/deliveries/count${query ? `?${query}` : ''}`,
     {
       headers: workspaceHeaders(
         accessToken,
@@ -124,10 +201,23 @@ export function getNotificationDeliveries(
 export function getNotificationDeliveryProblems(
   accessToken: string,
   workspaceId: string,
+  filters: NotificationDeliveryFilters = {},
   limit = 50,
 ) {
+  const params = deliverySearchParams(filters)
+
+  if (filters.problem) {
+    params.set('problem', filters.problem)
+  }
+
+  if (filters.cursor) {
+    params.set('cursor', filters.cursor)
+  }
+
+  params.set('limit', String(limit))
+
   return apiJson<NotificationDeliveryProblemPage>(
-    `/api/v1/notifications/deliveries/problems/page?limit=${limit}`,
+    `/api/v1/notifications/deliveries/problems/page?${params.toString()}`,
     {
       headers: workspaceHeaders(
         accessToken,
@@ -140,9 +230,18 @@ export function getNotificationDeliveryProblems(
 export function getNotificationDeliveryProblemCount(
   accessToken: string,
   workspaceId: string,
+  filters: NotificationDeliveryFilters = {},
 ) {
+  const params = deliverySearchParams(filters)
+
+  if (filters.problem) {
+    params.set('problem', filters.problem)
+  }
+
+  const query = params.toString()
+
   return apiJson<NotificationDeliveryCount>(
-    '/api/v1/notifications/deliveries/problems/count',
+    `/api/v1/notifications/deliveries/problems/count${query ? `?${query}` : ''}`,
     {
       headers: workspaceHeaders(
         accessToken,
