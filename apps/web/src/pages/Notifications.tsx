@@ -2,18 +2,22 @@ import {
   Bell,
   CheckCircle2,
   Clock3,
+  Filter,
   Send,
   TriangleAlert,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 
 import {
   getNotificationDeliveries,
+  getNotificationDeliveryCount,
   getNotificationDeliveryHealth,
   getNotificationDeliveryProblemCount,
   getNotificationDeliveryProblems,
   getNotificationDestinations,
   getNotificationRoutes,
+  type NotificationDeliveryFilters,
 } from '../api/notifications'
 import { useAuth } from '../auth/useAuth'
 
@@ -42,6 +46,52 @@ export function Notifications() {
   const token = auth.tokens?.access_token
   const workspaceId = auth.workspace?.id
 
+  const [
+    draftFilters,
+    setDraftFilters,
+  ] = useState<NotificationDeliveryFilters>({})
+
+  const [
+    appliedFilters,
+    setAppliedFilters,
+  ] = useState<NotificationDeliveryFilters>({})
+
+  const [
+    deliveryCursorStack,
+    setDeliveryCursorStack,
+  ] = useState<string[]>([])
+
+  const [
+    problemCursorStack,
+    setProblemCursorStack,
+  ] = useState<string[]>([])
+
+  const deliveryCursor =
+    deliveryCursorStack[
+      deliveryCursorStack.length - 1
+    ]
+
+  const problemCursor =
+    problemCursorStack[
+      problemCursorStack.length - 1
+    ]
+
+  const applyFilters = () => {
+    setAppliedFilters({
+      ...draftFilters,
+      cursor: undefined,
+    })
+    setDeliveryCursorStack([])
+    setProblemCursorStack([])
+  }
+
+  const resetFilters = () => {
+    setDraftFilters({})
+    setAppliedFilters({})
+    setDeliveryCursorStack([])
+    setProblemCursorStack([])
+  }
+
   const health = useQuery({
     queryKey: [
       'notification-health',
@@ -62,12 +112,39 @@ export function Notifications() {
     queryKey: [
       'notification-deliveries',
       workspaceId,
+      appliedFilters,
+      deliveryCursor,
     ],
     queryFn: () =>
       getNotificationDeliveries(
         token!,
         workspaceId!,
+        {
+          ...appliedFilters,
+          cursor: deliveryCursor,
+        },
         50,
+      ),
+    enabled: Boolean(
+      token && workspaceId,
+    ),
+    refetchInterval:
+      deliveryCursor
+        ? false
+        : 10_000,
+  })
+
+  const deliveryCount = useQuery({
+    queryKey: [
+      'notification-delivery-count',
+      workspaceId,
+      appliedFilters,
+    ],
+    queryFn: () =>
+      getNotificationDeliveryCount(
+        token!,
+        workspaceId!,
+        appliedFilters,
       ),
     enabled: Boolean(
       token && workspaceId,
@@ -79,28 +156,39 @@ export function Notifications() {
     queryKey: [
       'notification-delivery-problems',
       workspaceId,
+      appliedFilters,
+      problemCursor,
     ],
     queryFn: () =>
       getNotificationDeliveryProblems(
         token!,
         workspaceId!,
+        {
+          ...appliedFilters,
+          cursor: problemCursor,
+        },
         50,
       ),
     enabled: Boolean(
       token && workspaceId,
     ),
-    refetchInterval: 10_000,
+    refetchInterval:
+      problemCursor
+        ? false
+        : 10_000,
   })
 
   const problemCount = useQuery({
     queryKey: [
       'notification-delivery-problem-count',
       workspaceId,
+      appliedFilters,
     ],
     queryFn: () =>
       getNotificationDeliveryProblemCount(
         token!,
         workspaceId!,
+        appliedFilters,
       ),
     enabled: Boolean(
       token && workspaceId,
@@ -162,6 +250,22 @@ export function Notifications() {
       (route) => route.enabled,
     ).length ?? 0
 
+  const channelOptions = Array.from(
+    new Set(
+      (destinations.data ?? [])
+        .map(
+          (destination) =>
+            destination.channel,
+        )
+        .filter(Boolean),
+    ),
+  ).sort()
+
+  const activeFilterCount =
+    Object.values(appliedFilters)
+      .filter(Boolean)
+      .length
+
   return (
     <>
       <header className="page-header">
@@ -184,6 +288,7 @@ export function Notifications() {
 
       {(health.isError
         || deliveries.isError
+        || deliveryCount.isError
         || problems.isError
         || problemCount.isError
         || destinations.isError
@@ -208,12 +313,14 @@ export function Notifications() {
         </article>
 
         <article className="ops-stat">
-          <span>Total</span>
+          <span>Matching deliveries</span>
           <strong>
-            {counts?.total ?? '—'}
+            {deliveryCount.data?.total ?? '—'}
           </strong>
           <small>
-            Recorded deliveries
+            {deliveryCount.data
+              ? `${deliveryCount.data.backup} backup · ${deliveryCount.data.agent_lifecycle} lifecycle`
+              : 'Filtered delivery count'}
           </small>
         </article>
 
@@ -272,6 +379,222 @@ export function Notifications() {
         </article>
       </section>
 
+      <section className="panel ops-panel">
+        <div className="ops-title">
+          <Filter size={18} />
+          <div>
+            <strong>
+              Delivery explorer
+            </strong>
+            <small>
+              {activeFilterCount > 0
+                ? `${activeFilterCount} active filter(s)`
+                : 'All notification deliveries'}
+            </small>
+          </div>
+        </div>
+
+        <div className="notification-filter-grid">
+          <label className="field-label">
+            Source
+            <select
+              className="control-select"
+              value={draftFilters.source ?? ''}
+              onChange={(event) => {
+                const value = event.target.value
+
+                setDraftFilters(
+                  (current) => ({
+                    ...current,
+                    source:
+                      value === 'backup'
+                      || value === 'agent_lifecycle'
+                        ? value
+                        : undefined,
+                  }),
+                )
+              }}
+            >
+              <option value="">All sources</option>
+              <option value="backup">
+                backup
+              </option>
+              <option value="agent_lifecycle">
+                agent_lifecycle
+              </option>
+            </select>
+          </label>
+
+          <label className="field-label">
+            Status
+            <select
+              className="control-select"
+              value={draftFilters.status ?? ''}
+              onChange={(event) => {
+                const value = event.target.value
+
+                setDraftFilters(
+                  (current) => ({
+                    ...current,
+                    status:
+                      value === 'pending'
+                      || value === 'sending'
+                      || value === 'delivered'
+                      || value === 'failed'
+                      || value === 'canceled'
+                        ? value
+                        : undefined,
+                  }),
+                )
+              }}
+            >
+              <option value="">All statuses</option>
+              <option value="pending">
+                pending
+              </option>
+              <option value="sending">
+                sending
+              </option>
+              <option value="delivered">
+                delivered
+              </option>
+              <option value="failed">
+                failed
+              </option>
+              <option value="canceled">
+                canceled
+              </option>
+            </select>
+          </label>
+
+          <label className="field-label">
+            Problem
+            <select
+              className="control-select"
+              value={draftFilters.problem ?? ''}
+              onChange={(event) => {
+                const value = event.target.value
+
+                setDraftFilters(
+                  (current) => ({
+                    ...current,
+                    problem:
+                      value === 'retryable_failed'
+                      || value === 'exhausted_failed'
+                      || value === 'stale_sending'
+                        ? value
+                        : undefined,
+                  }),
+                )
+              }}
+            >
+              <option value="">All problems</option>
+              <option value="retryable_failed">
+                retryable_failed
+              </option>
+              <option value="exhausted_failed">
+                exhausted_failed
+              </option>
+              <option value="stale_sending">
+                stale_sending
+              </option>
+            </select>
+          </label>
+
+          <label className="field-label">
+            Destination
+            <select
+              className="control-select"
+              value={
+                draftFilters.destination_id
+                ?? ''
+              }
+              onChange={(event) =>
+                setDraftFilters(
+                  (current) => ({
+                    ...current,
+                    destination_id:
+                      event.target.value
+                      || undefined,
+                  }),
+                )
+              }
+            >
+              <option value="">
+                All destinations
+              </option>
+
+              {(destinations.data ?? [])
+                .map((destination) => (
+                  <option
+                    key={destination.id}
+                    value={destination.id}
+                  >
+                    {destination.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+
+          <label className="field-label">
+            Channel
+            <select
+              className="control-select"
+              value={draftFilters.channel ?? ''}
+              onChange={(event) =>
+                setDraftFilters(
+                  (current) => ({
+                    ...current,
+                    channel:
+                      event.target.value
+                      || undefined,
+                  }),
+                )
+              }
+            >
+              <option value="">
+                All channels
+              </option>
+
+              {channelOptions.map(
+                (channel) => (
+                  <option
+                    key={channel}
+                    value={channel}
+                  >
+                    {channel}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
+        </div>
+
+        <div className="notification-filter-actions">
+          <button
+            type="button"
+            className="sidebar-action"
+            onClick={applyFilters}
+          >
+            Apply filters
+          </button>
+
+          <button
+            type="button"
+            className="sidebar-action"
+            disabled={
+              activeFilterCount === 0
+              && Object.values(
+                draftFilters,
+              ).filter(Boolean).length === 0
+            }
+            onClick={resetFilters}
+          >
+            Clear
+          </button>
+        </div>
+      </section>
+
       {health.data?.issues
         && health.data.issues.length > 0
         && (
@@ -301,7 +624,10 @@ export function Notifications() {
               Delivery problems
             </strong>
             <small>
-              Latest 50 problem records
+              Page {problemCursorStack.length + 1}
+              {' · '}
+              {problemCount.data?.total ?? '—'}
+              {' matching problem records'}
             </small>
           </div>
         </div>
@@ -377,12 +703,52 @@ export function Notifications() {
           )}
         </div>
 
-        {problems.data?.has_more && (
-          <div className="ops-empty">
-            Additional problem records exist
-            beyond this page.
-          </div>
-        )}
+        <div className="ops-pagination">
+          <button
+            type="button"
+            className="sidebar-action"
+            disabled={
+              problemCursorStack.length === 0
+            }
+            onClick={() =>
+              setProblemCursorStack(
+                (current) =>
+                  current.slice(0, -1),
+              )
+            }
+          >
+            Previous
+          </button>
+
+          <small>
+            Page {problemCursorStack.length + 1}
+          </small>
+
+          <button
+            type="button"
+            className="sidebar-action"
+            disabled={
+              !problems.data?.next_cursor
+            }
+            onClick={() => {
+              const cursor =
+                problems.data?.next_cursor
+
+              if (!cursor) {
+                return
+              }
+
+              setProblemCursorStack(
+                (current) => [
+                  ...current,
+                  cursor,
+                ],
+              )
+            }}
+          >
+            Next
+          </button>
+        </div>
       </section>
 
       <section className="panel ops-panel">
@@ -489,7 +855,10 @@ export function Notifications() {
               Recent deliveries
             </strong>
             <small>
-              Latest 50 delivery records
+              Page {deliveryCursorStack.length + 1}
+              {' · '}
+              {deliveryCount.data?.total ?? '—'}
+              {' matching delivery records'}
             </small>
           </div>
         </div>
@@ -543,6 +912,15 @@ export function Notifications() {
                   </div>
 
                   <small>
+                    {delivery.destination_id
+                      ? (
+                          destinationById.get(
+                            delivery.destination_id,
+                          )?.name
+                          ?? delivery.destination_id
+                        )
+                      : 'no destination'}
+                    {' · '}
                     {delivery.channel}
                     {' · '}
                     attempts{' '}
@@ -563,6 +941,53 @@ export function Notifications() {
               </article>
             ),
           )}
+        </div>
+
+        <div className="ops-pagination">
+          <button
+            type="button"
+            className="sidebar-action"
+            disabled={
+              deliveryCursorStack.length === 0
+            }
+            onClick={() =>
+              setDeliveryCursorStack(
+                (current) =>
+                  current.slice(0, -1),
+              )
+            }
+          >
+            Previous
+          </button>
+
+          <small>
+            Page {deliveryCursorStack.length + 1}
+          </small>
+
+          <button
+            type="button"
+            className="sidebar-action"
+            disabled={
+              !deliveries.data?.next_cursor
+            }
+            onClick={() => {
+              const cursor =
+                deliveries.data?.next_cursor
+
+              if (!cursor) {
+                return
+              }
+
+              setDeliveryCursorStack(
+                (current) => [
+                  ...current,
+                  cursor,
+                ],
+              )
+            }}
+          >
+            Next
+          </button>
         </div>
       </section>
     </>
