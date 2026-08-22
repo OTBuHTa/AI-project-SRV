@@ -1273,3 +1273,123 @@ a {
     flex-wrap: wrap;
   }
 }
+
+/* v0.2.8-alpha shared control-center shell */
+
+.main-content {
+  min-width: 0;
+}
+
+.shell-header {
+  min-height: 68px;
+  padding: 0 28px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(15, 23, 42, 0.92),
+      rgba(15, 23, 42, 0.72)
+    );
+  backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.shell-header__context {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.shell-header__context strong {
+  color: #f8fafc;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.shell-header__eyebrow {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-header__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.shell-header__environment,
+.shell-header__role,
+.shell-header__status {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.58);
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.shell-header__environment {
+  color: #67e8f9;
+}
+
+.shell-header__status {
+  color: #cbd5e1;
+}
+
+.shell-header__status .status-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.shell-content {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .shell-header {
+    padding: 0 18px;
+  }
+
+  .shell-header__role {
+    display: none;
+  }
+}
+
+@media (max-width: 680px) {
+  .shell-header {
+    min-height: 60px;
+    gap: 12px;
+  }
+
+  .shell-header__environment {
+    display: none;
+  }
+
+  .shell-header__status {
+    padding: 0 8px;
+  }
+
+  .shell-header__status {
+    font-size: 0;
+  }
+}

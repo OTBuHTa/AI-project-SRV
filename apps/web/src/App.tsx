@@ -113,6 +113,16 @@ function ProtectedShell() {
     )
   }
 
+  const currentNav =
+    nav.find(([path]) =>
+      path === '/'
+        ? location.pathname === '/'
+        : location.pathname.startsWith(path),
+    )
+
+  const currentSection =
+    currentNav?.[1] ?? 'Control Center'
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -180,7 +190,33 @@ function ProtectedShell() {
       </aside>
 
       <main className="main-content">
-        <Routes>
+        <header className="shell-header">
+          <div className="shell-header__context">
+            <span className="shell-header__eyebrow">
+              {auth.workspace.name}
+            </span>
+            <strong>{currentSection}</strong>
+          </div>
+
+          <div className="shell-header__meta">
+            <span className="shell-header__environment">
+              {auth.workspace.environment}
+            </span>
+            <span className="shell-header__role">
+              {auth.workspace.role}
+            </span>
+            <span
+              className="shell-header__status"
+              title="Authenticated workspace session"
+            >
+              <span className="status-dot" />
+              Connected
+            </span>
+          </div>
+        </header>
+
+        <div className="shell-content">
+          <Routes>
           <Route
             path="/"
             element={<Dashboard />}
@@ -229,7 +265,8 @@ function ProtectedShell() {
               <Navigate to="/" replace />
             }
           />
-        </Routes>
+          </Routes>
+        </div>
       </main>
     </div>
   )
