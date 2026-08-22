@@ -1,4 +1,5 @@
 import {
+  useRef,
   useState,
   type FormEvent,
 } from 'react'
@@ -13,7 +14,10 @@ import {
 import {
   Link,
 } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import {
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 
 import {
   createActionProposal,
@@ -23,6 +27,8 @@ import {
   getAgents,
 } from '../api/agents'
 import {
+  getConversationMessages,
+  getConversations,
   sendChat,
 } from '../api/ai'
 import {
@@ -76,6 +82,8 @@ export function AIAssistant() {
   const workspaceId =
     auth.workspace?.id
 
+  const queryClient = useQueryClient()
+
   const agents = useQuery({
     queryKey: [
       'agents',
@@ -90,6 +98,22 @@ export function AIAssistant() {
       token && workspaceId,
     ),
     refetchInterval: 15_000,
+  })
+
+  const conversations = useQuery({
+    queryKey: [
+      'ai-conversations',
+      workspaceId,
+    ],
+    queryFn: () =>
+      getConversations(
+        token!,
+        workspaceId!,
+      ),
+    enabled: Boolean(
+      token && workspaceId,
+    ),
+    refetchInterval: 30_000,
   })
 
   const [resourceId, setResourceId] =
@@ -109,6 +133,19 @@ export function AIAssistant() {
 
   const [chatError, setChatError] =
     useState<string | null>(null)
+
+  const [
+    loadingConversationId,
+    setLoadingConversationId,
+  ] = useState<string | null>(null)
+
+  const [
+    historyError,
+    setHistoryError,
+  ] = useState<string | null>(null)
+
+  const historyRequestRef =
+    useRef(0)
 
   const [container, setContainer] =
     useState('')
@@ -139,6 +176,9 @@ export function AIAssistant() {
   function selectResource(
     nextResourceId: string,
   ) {
+    historyRequestRef.current += 1
+    setLoadingConversationId(null)
+    setHistoryError(null)
     setResourceId(nextResourceId)
     setConversationId(null)
     setMessages([])
@@ -146,6 +186,88 @@ export function AIAssistant() {
     setProposal(null)
     setChatError(null)
     setProposalError(null)
+  }
+
+  function startNewConversation() {
+    historyRequestRef.current += 1
+    setLoadingConversationId(null)
+    setHistoryError(null)
+    setConversationId(null)
+    setMessages([])
+    setChatError(null)
+  }
+
+  async function selectConversation(
+    nextConversationId: string,
+  ) {
+    if (!token || !workspaceId) {
+      return
+    }
+
+    const requestId =
+      historyRequestRef.current + 1
+
+    historyRequestRef.current =
+      requestId
+
+    setLoadingConversationId(
+      nextConversationId,
+    )
+    setHistoryError(null)
+    setChatError(null)
+    setConversationId(
+      nextConversationId,
+    )
+    setMessages([])
+
+    try {
+      const history =
+        await getConversationMessages(
+          token,
+          workspaceId,
+          nextConversationId,
+        )
+
+      if (
+        historyRequestRef.current
+        !== requestId
+      ) {
+        return
+      }
+
+      setMessages(
+        history.map((entry) => ({
+          id: entry.id,
+          role:
+            entry.role === 'user'
+              ? 'user'
+              : 'assistant',
+          content: entry.content,
+        })),
+      )
+    } catch (error) {
+      if (
+        historyRequestRef.current
+        !== requestId
+      ) {
+        return
+      }
+
+      setConversationId(null)
+      setMessages([])
+      setHistoryError(
+        error instanceof ApiError
+          ? error.detail
+          : 'conversation_history_failed',
+      )
+    } finally {
+      if (
+        historyRequestRef.current
+        === requestId
+      ) {
+        setLoadingConversationId(null)
+      }
+    }
   }
 
   async function submitChat(
@@ -201,6 +323,13 @@ export function AIAssistant() {
             `${response.mode} · ${response.model}`,
         },
       ])
+
+      await queryClient.invalidateQueries({
+        queryKey: [
+          'ai-conversations',
+          workspaceId,
+        ],
+      })
     } catch (error) {
       setChatError(
         error instanceof ApiError
@@ -403,6 +532,97 @@ export function AIAssistant() {
         </div>
 
         <aside className="ai-side">
+          <article className="panel">
+            <div className="panel__title">
+              <Bot size={19} />
+              <h2>Conversation history</h2>
+            </div>
+
+            <button
+              type="button"
+              className="sidebar-action"
+              disabled={
+                sending
+                || loadingConversationId
+                  !== null
+              }
+              onClick={startNewConversation}
+            >
+              New conversation
+            </button>
+
+            {conversations.isLoading && (
+              <div className="placeholder">
+                Loading conversations…
+              </div>
+            )}
+
+            {conversations.isError && (
+              <div className="auth-error">
+                Conversation history
+                unavailable.
+              </div>
+            )}
+
+            {historyError && (
+              <div className="auth-error">
+                {historyError}
+              </div>
+            )}
+
+            {conversations.isSuccess
+              && conversations.data.length
+                === 0
+              && (
+                <div className="placeholder">
+                  No previous conversations.
+                </div>
+              )}
+
+            <div className="ops-list">
+              {conversations.data?.map(
+                (conversation) => (
+                  <button
+                    type="button"
+                    className="sidebar-action"
+                    key={conversation.id}
+                    disabled={
+                      sending
+                      || loadingConversationId
+                        !== null
+                    }
+                    onClick={() =>
+                      void selectConversation(
+                        conversation.id,
+                      )
+                    }
+                  >
+                    <strong>
+                      {conversation.title}
+                    </strong>
+
+                    <span>
+                      {loadingConversationId
+                        === conversation.id
+                        ? 'Loading…'
+                        : new Date(
+                            conversation.updated_at,
+                          ).toLocaleString()}
+                    </span>
+
+                    {conversationId
+                      === conversation.id
+                      && (
+                        <span>
+                          SELECTED
+                        </span>
+                      )}
+                  </button>
+                ),
+              )}
+            </div>
+          </article>
+
           <article className="panel">
             <div className="panel__title">
               <ShieldCheck size={19} />
