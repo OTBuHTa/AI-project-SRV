@@ -16,6 +16,7 @@ import {
 } from '../api/agents'
 import {
   getActiveAgentLifecycleAlerts,
+  getAgentLifecycleAlerts,
   getAgentTokenLifecycleDiagnostics,
 } from '../api/monitoring'
 import { useAuth } from '../auth/useAuth'
@@ -199,6 +200,7 @@ export function Agents() {
       const [
         diagnostics,
         activeAlerts,
+        alertHistory,
       ] = await Promise.all([
         getAgentTokenLifecycleDiagnostics(
           token!,
@@ -208,11 +210,16 @@ export function Agents() {
           token!,
           workspaceId!,
         ),
+        getAgentLifecycleAlerts(
+          token!,
+          workspaceId!,
+        ),
       ])
 
       return {
         diagnostics,
         activeAlerts,
+        alertHistory,
       }
     },
     enabled: Boolean(
@@ -427,6 +434,97 @@ export function Agents() {
             )}
           </div>
         </article>
+      </section>
+
+      <section className="panel ops-panel">
+        <div className="ops-title">
+          <Clock3 size={18} />
+          <div>
+            <strong>
+              Lifecycle alert history
+            </strong>
+            <small>
+              Latest workspace lifecycle events
+            </small>
+          </div>
+        </div>
+
+        {lifecycle.isLoading && (
+          <div className="ops-empty">
+            Loading lifecycle history…
+          </div>
+        )}
+
+        {lifecycleData
+          && lifecycleData.alertHistory.length
+            === 0
+          && (
+            <div className="ops-empty">
+              No lifecycle alert events recorded.
+            </div>
+          )}
+
+        <div className="ops-list">
+          {lifecycleData?.alertHistory.map(
+            (alert) => (
+              <article
+                className="ops-row"
+                key={alert.id}
+              >
+                <div className="ops-row__main">
+                  <div className="ops-row__heading">
+                    <TriangleAlert size={16} />
+
+                    <strong>
+                      {alert.code}
+                    </strong>
+
+                    <span className="status-badge">
+                      {alert.severity}
+                    </span>
+
+                    <span
+                      className={
+                        alert.active
+                          ? 'status-badge'
+                          : (
+                              'status-badge '
+                              + 'status-badge--ok'
+                            )
+                      }
+                    >
+                      {alert.active
+                        ? 'active'
+                        : 'resolved'}
+                    </span>
+                  </div>
+
+                  <small>
+                    first seen{' '}
+                    {lastSeen(
+                      alert.first_seen_at,
+                    )}
+                    {' · last seen '}
+                    {lastSeen(
+                      alert.last_seen_at,
+                    )}
+                  </small>
+                </div>
+
+                <span>
+                  {alert.message}
+                </span>
+
+                <small>
+                  resolved{' '}
+                  {lastSeen(
+                    alert.resolved_at,
+                  )}
+                </small>
+              </article>
+            ),
+          )}
+        </div>
       </section>
 
       {agents.isLoading && (
