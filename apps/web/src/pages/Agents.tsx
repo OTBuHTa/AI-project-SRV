@@ -19,6 +19,7 @@ import {
 import {
   getAgents,
   type Agent,
+  revokeAgent,
   rotateAgentToken,
 } from '../api/agents'
 import {
@@ -68,11 +69,15 @@ function lastSeen(
 function AgentCard({
   agent,
   rotating,
+  revoking,
   onRotate,
+  onRevoke,
 }: {
   agent: Agent
   rotating: boolean
+  revoking: boolean
   onRotate: (agent: Agent) => void
+  onRevoke: (agent: Agent) => void
 }) {
   const metrics = agent.metrics
 
@@ -178,6 +183,7 @@ function AgentCard({
           className="sidebar-action"
           disabled={
             rotating
+            || revoking
             || agent.status === 'revoked'
           }
           onClick={() => {
@@ -196,6 +202,36 @@ function AgentCard({
           {rotating
             ? 'Rotating…'
             : 'Rotate agent token'}
+        </button>
+
+        <button
+          type="button"
+          className="sidebar-action"
+          disabled={
+            rotating
+            || revoking
+            || agent.status === 'revoked'
+          }
+          onClick={() => {
+            const confirmed = window.confirm(
+              'Revoke agent '
+              + agent.hostname
+              + '? This will invalidate its '
+              + 'credentials, cancel any pending '
+              + 'token rotation and mark the '
+              + 'linked resource offline.',
+            )
+
+            if (confirmed) {
+              onRevoke(agent)
+            }
+          }}
+        >
+          {agent.status === 'revoked'
+            ? 'Agent revoked'
+            : revoking
+              ? 'Revoking…'
+              : 'Revoke agent'}
         </button>
       </div>
     </article>
@@ -223,6 +259,15 @@ export function Agents() {
     agentToken: string
     expiresAt: string
     rotatedAt: string
+  } | null>(null)
+
+  const [
+    revokedAgent,
+    setRevokedAgent,
+  ] = useState<{
+    agentId: string
+    hostname: string
+    revokedAt: string
   } | null>(null)
 
   const agents = useQuery({
@@ -304,6 +349,35 @@ export function Agents() {
     },
   })
 
+  const revokeAgentMutation = useMutation({
+    mutationFn: (agent: Agent) =>
+      revokeAgent(
+        token!,
+        workspaceId!,
+        agent.id,
+      ),
+    onMutate: () => {
+      setRevokedAgent(null)
+    },
+    onSuccess: (result, agent) => {
+      setRevokedAgent({
+        agentId: result.agent_id,
+        hostname: agent.hostname,
+        revokedAt: result.revoked_at,
+      })
+
+      if (
+        rotatedCredential?.agentId
+        === agent.id
+      ) {
+        setRotatedCredential(null)
+      }
+
+      void agents.refetch()
+      void lifecycle.refetch()
+    },
+  })
+
   const lifecycleData =
     lifecycle.data
 
@@ -343,6 +417,22 @@ export function Agents() {
       {rotateToken.isError && (
         <div className="auth-error">
           Agent token rotation failed.
+        </div>
+      )}
+
+
+      {revokeAgentMutation.isError && (
+        <div className="auth-error">
+          Agent revocation failed.
+        </div>
+      )}
+
+      {revokedAgent && (
+        <div className="ops-success">
+          Agent {revokedAgent.hostname}
+          {' revoked at '}
+          {lastSeen(revokedAgent.revokedAt)}.
+          {' Resource marked offline.'}
         </div>
       )}
 
@@ -709,8 +799,18 @@ export function Agents() {
               && rotateToken.variables?.id
                 === agent.id
             }
+            revoking={
+              revokeAgentMutation.isPending
+              && revokeAgentMutation.variables?.id
+                === agent.id
+            }
             onRotate={(targetAgent) =>
               rotateToken.mutate(
+                targetAgent,
+              )
+            }
+            onRevoke={(targetAgent) =>
+              revokeAgentMutation.mutate(
                 targetAgent,
               )
             }
