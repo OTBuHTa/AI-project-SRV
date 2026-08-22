@@ -1,1 +1,1 @@
-API_VERSION = "0.2.6-alpha"
+API_VERSION = "0.2.7-alpha"
