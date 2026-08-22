@@ -6,7 +6,10 @@ import {
   Send,
   TriangleAlert,
 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import {
+  useQuery,
+  useMutation,
+} from '@tanstack/react-query'
 import { useState } from 'react'
 
 import {
@@ -18,6 +21,9 @@ import {
   getNotificationDestinations,
   getNotificationRoutes,
   type NotificationDeliveryFilters,
+  createNotificationDestination,
+  deleteNotificationDestination,
+  updateNotificationDestination,
 } from '../api/notifications'
 import { useAuth } from '../auth/useAuth'
 
@@ -39,6 +45,462 @@ function statusClass(
     || status === 'delivered'
       ? 'status-badge status-badge--ok'
       : 'status-badge'
+}
+
+
+type DestinationManagerItem = {
+  id: string
+  name: string
+  channel: string
+  endpoint: string
+  enabled: boolean
+}
+
+type DestinationManagerRoute = {
+  destination_id: string
+}
+
+function NotificationDestinationManager({
+  accessToken,
+  workspaceId,
+  destinations,
+  routes,
+  onRefresh,
+}: {
+  accessToken: string
+  workspaceId: string
+  destinations: DestinationManagerItem[]
+  routes: DestinationManagerRoute[]
+  onRefresh: () => Promise<unknown>
+}) {
+  const [createName, setCreateName] =
+    useState('')
+  const [createEndpoint, setCreateEndpoint] =
+    useState('')
+  const [createEnabled, setCreateEnabled] =
+    useState(true)
+
+  const [editingId, setEditingId] =
+    useState<string | null>(null)
+  const [editName, setEditName] =
+    useState('')
+  const [editEndpoint, setEditEndpoint] =
+    useState('')
+
+  const createDestination = useMutation({
+    mutationFn: () =>
+      createNotificationDestination(
+        accessToken,
+        workspaceId,
+        {
+          name: createName.trim(),
+          channel: 'webhook',
+          endpoint: createEndpoint.trim(),
+          enabled: createEnabled,
+        },
+      ),
+    onSuccess: async () => {
+      setCreateName('')
+      setCreateEndpoint('')
+      setCreateEnabled(true)
+      await onRefresh()
+    },
+  })
+
+  const saveDestination = useMutation({
+    mutationFn: ({
+      destinationId,
+      name,
+      endpoint,
+    }: {
+      destinationId: string
+      name: string
+      endpoint: string
+    }) =>
+      updateNotificationDestination(
+        accessToken,
+        workspaceId,
+        destinationId,
+        {
+          name: name.trim(),
+          endpoint: endpoint.trim(),
+        },
+      ),
+    onSuccess: async () => {
+      setEditingId(null)
+      setEditName('')
+      setEditEndpoint('')
+      await onRefresh()
+    },
+  })
+
+  const toggleDestination = useMutation({
+    mutationFn: ({
+      destinationId,
+      enabled,
+    }: {
+      destinationId: string
+      enabled: boolean
+    }) =>
+      updateNotificationDestination(
+        accessToken,
+        workspaceId,
+        destinationId,
+        {
+          enabled,
+        },
+      ),
+    onSuccess: async () => {
+      await onRefresh()
+    },
+  })
+
+  const removeDestination = useMutation({
+    mutationFn: (destinationId: string) =>
+      deleteNotificationDestination(
+        accessToken,
+        workspaceId,
+        destinationId,
+      ),
+    onSuccess: async () => {
+      setEditingId(null)
+      await onRefresh()
+    },
+  })
+
+  const startEdit = (
+    destination: DestinationManagerItem,
+  ) => {
+    setEditingId(destination.id)
+    setEditName(destination.name)
+    setEditEndpoint(destination.endpoint)
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditName('')
+    setEditEndpoint('')
+  }
+
+  const mutationError =
+    createDestination.isError
+    || saveDestination.isError
+    || toggleDestination.isError
+    || removeDestination.isError
+
+  return (
+    <section className="panel ops-panel">
+      <div className="ops-title">
+        <div>
+          <strong>
+            Notification destinations
+          </strong>
+          <small>
+            Manage webhook delivery endpoints.
+          </small>
+        </div>
+      </div>
+
+      {mutationError && (
+        <div className="auth-error">
+          Notification destination operation failed.
+        </div>
+      )}
+
+      <div className="notification-filter-grid">
+        <label className="field-label">
+          Name
+          <input
+            className="control-input"
+            value={createName}
+            maxLength={128}
+            placeholder="operations"
+            onChange={(event) =>
+              setCreateName(event.target.value)
+            }
+          />
+        </label>
+
+        <label className="field-label">
+          Channel
+          <input
+            className="control-input"
+            value="webhook"
+            readOnly
+            disabled
+          />
+        </label>
+
+        <label className="field-label">
+          Endpoint
+          <input
+            className="control-input"
+            value={createEndpoint}
+            placeholder="https://example.com/alerts"
+            onChange={(event) =>
+              setCreateEndpoint(
+                event.target.value,
+              )
+            }
+          />
+        </label>
+
+        <label className="field-label">
+          Enabled
+          <input
+            type="checkbox"
+            checked={createEnabled}
+            onChange={(event) =>
+              setCreateEnabled(
+                event.target.checked,
+              )
+            }
+          />
+        </label>
+      </div>
+
+      <div className="notification-filter-actions">
+        <button
+          type="button"
+          className="sidebar-action"
+          disabled={
+            createDestination.isPending
+            || createName.trim().length === 0
+            || createEndpoint.trim().length === 0
+          }
+          onClick={() =>
+            createDestination.mutate()
+          }
+        >
+          {createDestination.isPending
+            ? 'Creating…'
+            : 'Create destination'}
+        </button>
+      </div>
+
+      {destinations.length === 0 && (
+        <div className="ops-empty">
+          No notification destinations configured.
+        </div>
+      )}
+
+      <div className="ops-list">
+        {destinations.map((destination) => {
+          const routeCount = routes.filter(
+            (route) =>
+              route.destination_id
+              === destination.id,
+          ).length
+
+          const editing =
+            editingId === destination.id
+
+          const saving =
+            saveDestination.isPending
+            && saveDestination.variables
+              ?.destinationId
+              === destination.id
+
+          const toggling =
+            toggleDestination.isPending
+            && toggleDestination.variables
+              ?.destinationId
+              === destination.id
+
+          const deleting =
+            removeDestination.isPending
+            && removeDestination.variables
+              === destination.id
+
+          const busy =
+            saving || toggling || deleting
+
+          return (
+            <article
+              className="ops-row"
+              key={destination.id}
+            >
+              <div className="ops-row__main">
+                <div className="ops-row__heading">
+                  <strong>
+                    {destination.name}
+                  </strong>
+
+                  <span
+                    className={
+                      destination.enabled
+                        ? (
+                            'status-badge '
+                            + 'status-badge--ok'
+                          )
+                        : 'status-badge'
+                    }
+                  >
+                    {destination.enabled
+                      ? 'enabled'
+                      : 'disabled'}
+                  </span>
+
+                  <span className="status-badge">
+                    {destination.channel}
+                  </span>
+                </div>
+
+                <small>
+                  {routeCount} route
+                  {routeCount === 1 ? '' : 's'}
+                </small>
+              </div>
+
+              {editing ? (
+                <>
+                  <div className="notification-filter-grid">
+                    <label className="field-label">
+                      Name
+                      <input
+                        className="control-input"
+                        value={editName}
+                        maxLength={128}
+                        onChange={(event) =>
+                          setEditName(
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </label>
+
+                    <label className="field-label">
+                      Endpoint
+                      <input
+                        className="control-input"
+                        value={editEndpoint}
+                        onChange={(event) =>
+                          setEditEndpoint(
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <div className="notification-filter-actions">
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={
+                        busy
+                        || editName.trim().length
+                          === 0
+                        || editEndpoint.trim().length
+                          === 0
+                      }
+                      onClick={() =>
+                        saveDestination.mutate({
+                          destinationId:
+                            destination.id,
+                          name: editName,
+                          endpoint:
+                            editEndpoint,
+                        })
+                      }
+                    >
+                      {saving
+                        ? 'Saving…'
+                        : 'Save'}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={busy}
+                      onClick={cancelEdit}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <span>
+                    {destination.endpoint}
+                  </span>
+
+                  <div className="notification-filter-actions">
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={busy}
+                      onClick={() =>
+                        startEdit(destination)
+                      }
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={busy}
+                      onClick={() =>
+                        toggleDestination.mutate({
+                          destinationId:
+                            destination.id,
+                          enabled:
+                            !destination.enabled,
+                        })
+                      }
+                    >
+                      {toggling
+                        ? 'Updating…'
+                        : (
+                            destination.enabled
+                              ? 'Disable'
+                              : 'Enable'
+                          )}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={busy}
+                      onClick={() => {
+                        const suffix =
+                          routeCount > 0
+                            ? (
+                                ` ${routeCount} associated `
+                                + `route${
+                                  routeCount === 1
+                                    ? ''
+                                    : 's'
+                                } will also be deleted.`
+                              )
+                            : ''
+
+                        if (
+                          window.confirm(
+                            `Delete ${destination.name}?`
+                            + suffix,
+                          )
+                        ) {
+                          removeDestination.mutate(
+                            destination.id,
+                          )
+                        }
+                      }}
+                    >
+                      {deleting
+                        ? 'Deleting…'
+                        : 'Delete'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
 }
 
 export function Notifications() {
@@ -285,6 +747,24 @@ export function Notifications() {
           DELIVERY
         </div>
       </header>
+
+      {token && workspaceId && (
+        <NotificationDestinationManager
+          accessToken={token}
+          workspaceId={workspaceId}
+          destinations={
+            destinations.data ?? []
+          }
+          routes={routes.data ?? []}
+          onRefresh={async () => {
+            await Promise.all([
+              destinations.refetch(),
+              routes.refetch(),
+            ])
+          }}
+        />
+      )}
+
 
       {(health.isError
         || deliveries.isError
