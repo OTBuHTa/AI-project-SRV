@@ -355,3 +355,77 @@ export function getNotificationRoutes(
     },
   )
 }
+
+
+export type NotificationRouteCreate = {
+  destination_id: string
+  alert_code: string | null
+  severity: string | null
+  enabled: boolean
+}
+
+export type NotificationRouteUpdate = {
+  alert_code?: string | null
+  severity?: string | null
+  enabled?: boolean
+}
+
+export function createNotificationRoute(
+  accessToken: string,
+  workspaceId: string,
+  payload: NotificationRouteCreate,
+) {
+  return apiJson<NotificationRoute>(
+    '/api/v1/notifications/routes',
+    {
+      method: 'POST',
+      headers: {
+        ...workspaceHeaders(
+          accessToken,
+          workspaceId,
+        ),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
+export function updateNotificationRoute(
+  accessToken: string,
+  workspaceId: string,
+  routeId: string,
+  payload: NotificationRouteUpdate,
+) {
+  return apiJson<NotificationRoute>(
+    `/api/v1/notifications/routes/${routeId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        ...workspaceHeaders(
+          accessToken,
+          workspaceId,
+        ),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
+export function deleteNotificationRoute(
+  accessToken: string,
+  workspaceId: string,
+  routeId: string,
+) {
+  return apiJson<void>(
+    `/api/v1/notifications/routes/${routeId}`,
+    {
+      method: 'DELETE',
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}

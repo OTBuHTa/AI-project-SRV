@@ -24,6 +24,9 @@ import {
   createNotificationDestination,
   deleteNotificationDestination,
   updateNotificationDestination,
+  createNotificationRoute,
+  deleteNotificationRoute,
+  updateNotificationRoute,
 } from '../api/notifications'
 import { useAuth } from '../auth/useAuth'
 
@@ -503,6 +506,473 @@ function NotificationDestinationManager({
   )
 }
 
+
+type RouteManagerItem = {
+  id: string
+  destination_id: string
+  alert_code: string | null
+  severity: string | null
+  enabled: boolean
+}
+
+function NotificationRouteManager({
+  accessToken,
+  workspaceId,
+  destinations,
+  routes,
+  onRefresh,
+}: {
+  accessToken: string
+  workspaceId: string
+  destinations: DestinationManagerItem[]
+  routes: RouteManagerItem[]
+  onRefresh: () => Promise<unknown>
+}) {
+  const [createDestinationId, setCreateDestinationId] =
+    useState('')
+  const [createAlertCode, setCreateAlertCode] =
+    useState('')
+  const [createSeverity, setCreateSeverity] =
+    useState('')
+  const [createEnabled, setCreateEnabled] =
+    useState(true)
+
+  const [editingId, setEditingId] =
+    useState<string | null>(null)
+  const [editAlertCode, setEditAlertCode] =
+    useState('')
+  const [editSeverity, setEditSeverity] =
+    useState('')
+
+  const createRoute = useMutation({
+    mutationFn: () =>
+      createNotificationRoute(
+        accessToken,
+        workspaceId,
+        {
+          destination_id: createDestinationId,
+          alert_code:
+            createAlertCode.trim() || null,
+          severity:
+            createSeverity.trim() || null,
+          enabled: createEnabled,
+        },
+      ),
+    onSuccess: async () => {
+      setCreateDestinationId('')
+      setCreateAlertCode('')
+      setCreateSeverity('')
+      setCreateEnabled(true)
+      await onRefresh()
+    },
+  })
+
+  const saveRoute = useMutation({
+    mutationFn: ({
+      routeId,
+      alertCode,
+      severity,
+    }: {
+      routeId: string
+      alertCode: string
+      severity: string
+    }) =>
+      updateNotificationRoute(
+        accessToken,
+        workspaceId,
+        routeId,
+        {
+          alert_code:
+            alertCode.trim() || null,
+          severity:
+            severity.trim() || null,
+        },
+      ),
+    onSuccess: async () => {
+      setEditingId(null)
+      setEditAlertCode('')
+      setEditSeverity('')
+      await onRefresh()
+    },
+  })
+
+  const toggleRoute = useMutation({
+    mutationFn: ({
+      routeId,
+      enabled,
+    }: {
+      routeId: string
+      enabled: boolean
+    }) =>
+      updateNotificationRoute(
+        accessToken,
+        workspaceId,
+        routeId,
+        {
+          enabled,
+        },
+      ),
+    onSuccess: async () => {
+      await onRefresh()
+    },
+  })
+
+  const removeRoute = useMutation({
+    mutationFn: (routeId: string) =>
+      deleteNotificationRoute(
+        accessToken,
+        workspaceId,
+        routeId,
+      ),
+    onSuccess: async () => {
+      setEditingId(null)
+      await onRefresh()
+    },
+  })
+
+  const startEdit = (
+    route: RouteManagerItem,
+  ) => {
+    setEditingId(route.id)
+    setEditAlertCode(
+      route.alert_code ?? '',
+    )
+    setEditSeverity(
+      route.severity ?? '',
+    )
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditAlertCode('')
+    setEditSeverity('')
+  }
+
+  const destinationName = (
+    destinationId: string,
+  ) =>
+    destinations.find(
+      (destination) =>
+        destination.id === destinationId,
+    )?.name ?? destinationId
+
+  const mutationError =
+    createRoute.isError
+    || saveRoute.isError
+    || toggleRoute.isError
+    || removeRoute.isError
+
+  return (
+    <section className="panel ops-panel">
+      <div className="ops-title">
+        <div>
+          <strong>
+            Notification routes
+          </strong>
+          <small>
+            Manage destination routing rules.
+          </small>
+        </div>
+      </div>
+
+      {mutationError && (
+        <div className="auth-error">
+          Notification route operation failed.
+        </div>
+      )}
+
+      <div className="notification-filter-grid">
+        <label className="field-label">
+          Destination
+          <select
+            className="control-select"
+            value={createDestinationId}
+            onChange={(event) =>
+              setCreateDestinationId(
+                event.target.value,
+              )
+            }
+          >
+            <option value="">
+              Select destination
+            </option>
+
+            {destinations.map(
+              (destination) => (
+                <option
+                  key={destination.id}
+                  value={destination.id}
+                >
+                  {destination.name}
+                </option>
+              ),
+            )}
+          </select>
+        </label>
+
+        <label className="field-label">
+          Alert code
+          <input
+            className="control-input"
+            value={createAlertCode}
+            maxLength={64}
+            placeholder="any alert"
+            onChange={(event) =>
+              setCreateAlertCode(
+                event.target.value,
+              )
+            }
+          />
+        </label>
+
+        <label className="field-label">
+          Severity
+          <input
+            className="control-input"
+            value={createSeverity}
+            maxLength={32}
+            placeholder="any severity"
+            onChange={(event) =>
+              setCreateSeverity(
+                event.target.value,
+              )
+            }
+          />
+        </label>
+
+        <label className="field-label">
+          Enabled
+          <input
+            type="checkbox"
+            checked={createEnabled}
+            onChange={(event) =>
+              setCreateEnabled(
+                event.target.checked,
+              )
+            }
+          />
+        </label>
+      </div>
+
+      <div className="notification-filter-actions">
+        <button
+          type="button"
+          className="sidebar-action"
+          disabled={
+            createRoute.isPending
+            || createDestinationId.length === 0
+          }
+          onClick={() =>
+            createRoute.mutate()
+          }
+        >
+          {createRoute.isPending
+            ? 'Creating…'
+            : 'Create route'}
+        </button>
+      </div>
+
+      {destinations.length === 0 && (
+        <div className="ops-empty">
+          Create a notification destination
+          before adding routes.
+        </div>
+      )}
+
+      {routes.length === 0 && (
+        <div className="ops-empty">
+          No notification routes configured.
+        </div>
+      )}
+
+      <div className="ops-list">
+        {routes.map((route) => {
+          const editing =
+            editingId === route.id
+
+          const saving =
+            saveRoute.isPending
+            && saveRoute.variables
+              ?.routeId === route.id
+
+          const toggling =
+            toggleRoute.isPending
+            && toggleRoute.variables
+              ?.routeId === route.id
+
+          const deleting =
+            removeRoute.isPending
+            && removeRoute.variables
+              === route.id
+
+          const busy =
+            saving || toggling || deleting
+
+          return (
+            <article
+              className="ops-row"
+              key={route.id}
+            >
+              <div className="ops-row__main">
+                <div className="ops-row__heading">
+                  <strong>
+                    {destinationName(
+                      route.destination_id,
+                    )}
+                  </strong>
+
+                  <span
+                    className={
+                      route.enabled
+                        ? (
+                            'status-badge '
+                            + 'status-badge--ok'
+                          )
+                        : 'status-badge'
+                    }
+                  >
+                    {route.enabled
+                      ? 'enabled'
+                      : 'disabled'}
+                  </span>
+                </div>
+
+                <small>
+                  {route.alert_code
+                    ?? 'any alert'}
+                  {' · '}
+                  {route.severity
+                    ?? 'any severity'}
+                </small>
+              </div>
+
+              {editing ? (
+                <>
+                  <div className="notification-filter-grid">
+                    <label className="field-label">
+                      Alert code
+                      <input
+                        className="control-input"
+                        value={editAlertCode}
+                        maxLength={64}
+                        placeholder="any alert"
+                        onChange={(event) =>
+                          setEditAlertCode(
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </label>
+
+                    <label className="field-label">
+                      Severity
+                      <input
+                        className="control-input"
+                        value={editSeverity}
+                        maxLength={32}
+                        placeholder="any severity"
+                        onChange={(event) =>
+                          setEditSeverity(
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <div className="notification-filter-actions">
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={busy}
+                      onClick={() =>
+                        saveRoute.mutate({
+                          routeId: route.id,
+                          alertCode:
+                            editAlertCode,
+                          severity:
+                            editSeverity,
+                        })
+                      }
+                    >
+                      {saving
+                        ? 'Saving…'
+                        : 'Save'}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={busy}
+                      onClick={cancelEdit}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="notification-filter-actions">
+                  <button
+                    type="button"
+                    className="sidebar-action"
+                    disabled={busy}
+                    onClick={() =>
+                      startEdit(route)
+                    }
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    className="sidebar-action"
+                    disabled={busy}
+                    onClick={() =>
+                      toggleRoute.mutate({
+                        routeId: route.id,
+                        enabled: !route.enabled,
+                      })
+                    }
+                  >
+                    {toggling
+                      ? 'Updating…'
+                      : (
+                          route.enabled
+                            ? 'Disable'
+                            : 'Enable'
+                        )}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="sidebar-action"
+                    disabled={busy}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          'Delete this notification route?',
+                        )
+                      ) {
+                        removeRoute.mutate(
+                          route.id,
+                        )
+                      }
+                    }}
+                  >
+                    {deleting
+                      ? 'Deleting…'
+                      : 'Delete'}
+                  </button>
+                </div>
+              )}
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 export function Notifications() {
   const auth = useAuth()
   const token = auth.tokens?.access_token
@@ -765,6 +1235,21 @@ export function Notifications() {
         />
       )}
 
+
+
+      {token && workspaceId && (
+        <NotificationRouteManager
+          accessToken={token}
+          workspaceId={workspaceId}
+          destinations={
+            destinations.data ?? []
+          }
+          routes={routes.data ?? []}
+          onRefresh={async () => {
+            await routes.refetch()
+          }}
+        />
+      )}
 
       {(health.isError
         || deliveries.isError
@@ -1239,7 +1724,7 @@ export function Notifications() {
               Delivery configuration
             </strong>
             <small>
-              Read-only destinations and routes
+              Destination and route summary
             </small>
           </div>
         </div>

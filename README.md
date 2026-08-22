@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.3.5-alpha` — Notification destination management from the Web Control Center.
+`v0.3.6-alpha` — Notification route management from the Web Control Center.
 
 ## Architecture principles
 - AI Core runs on the workstation.
