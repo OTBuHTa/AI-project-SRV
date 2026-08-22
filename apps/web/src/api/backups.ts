@@ -187,6 +187,21 @@ export function getActiveBackupAlertEvents(
   )
 }
 
+export function getBackupAlertEvents(
+  accessToken: string,
+  workspaceId: string,
+) {
+  return apiJson<BackupAlertEvent[]>(
+    '/api/v1/backups/alert-events',
+    {
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
 export function createBackup(
   accessToken: string,
   workspaceId: string,
