@@ -14,6 +14,7 @@ import {
 } from '@tanstack/react-query'
 
 import {
+  acknowledgeBackupAlert,
   createBackup,
   getActiveBackupAlertEvents,
   getBackupAlertEvents,
@@ -130,6 +131,20 @@ export function Backups() {
     },
   })
 
+  const acknowledgeAlert = useMutation({
+    mutationFn: (eventId: string) =>
+      acknowledgeBackupAlert(
+        token!,
+        workspaceId!,
+        eventId,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['backups'],
+      })
+    },
+  })
+
   const data = overview.data
 
   return (
@@ -182,6 +197,18 @@ export function Backups() {
           Backup job completed with status:
           {' '}
           {runBackup.data.status}
+        </div>
+      )}
+
+      {acknowledgeAlert.isError && (
+        <div className="auth-error">
+          Backup alert acknowledgement failed.
+        </div>
+      )}
+
+      {acknowledgeAlert.isSuccess && (
+        <div className="ops-success">
+          Backup alert acknowledged.
         </div>
       )}
 
@@ -352,6 +379,34 @@ export function Backups() {
                   <span>
                     {alert.message}
                   </span>
+
+                  {!alert.acknowledged_at && (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={
+                        !token
+                        || !workspaceId
+                        || (
+                          acknowledgeAlert.isPending
+                          && acknowledgeAlert.variables
+                            === alert.id
+                        )
+                      }
+                      onClick={() =>
+                        acknowledgeAlert.mutate(
+                          alert.id,
+                        )
+                      }
+                    >
+                      <CheckCircle2 size={15} />
+                      {acknowledgeAlert.isPending
+                        && acknowledgeAlert.variables
+                          === alert.id
+                        ? 'Acknowledging…'
+                        : 'Acknowledge'}
+                    </button>
+                  )}
                 </article>
               ),
             )}
