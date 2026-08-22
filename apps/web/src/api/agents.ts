@@ -63,6 +63,32 @@ export type InventorySummary = {
   lifecycle: Record<string, number>
 }
 
+export type InventoryLifecycleStatus =
+  | 'observed'
+  | 'stale'
+  | 'absent'
+
+export type InventoryItem = {
+  id: string
+  workspace_id: string
+  resource_id: string
+  kind: string
+  external_id: string
+  name: string
+  status: string
+  attributes: Record<string, unknown>
+  observed_at: string
+  last_seen_at: string | null
+  lifecycle_status: InventoryLifecycleStatus
+  created_at: string
+  updated_at: string
+}
+
+export type InventoryFilters = {
+  kind?: string
+  lifecycleStatus?: InventoryLifecycleStatus
+}
+
 export function getAgents(
   accessToken: string,
   workspaceId: string,
@@ -118,6 +144,39 @@ export function getInventorySummary(
 ) {
   return apiJson<InventorySummary>(
     `/api/v1/inventory/resources/${resourceId}/summary`,
+    {
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
+export function getResourceInventory(
+  accessToken: string,
+  workspaceId: string,
+  resourceId: string,
+  filters: InventoryFilters = {},
+) {
+  const params = new URLSearchParams()
+
+  if (filters.kind) {
+    params.set('kind', filters.kind)
+  }
+
+  if (filters.lifecycleStatus) {
+    params.set(
+      'lifecycle_status',
+      filters.lifecycleStatus,
+    )
+  }
+
+  const query = params.toString()
+
+  return apiJson<InventoryItem[]>(
+    `/api/v1/inventory/resources/${resourceId}/items`
+      + (query ? `?${query}` : ''),
     {
       headers: workspaceHeaders(
         accessToken,

@@ -1,4 +1,7 @@
 import {
+  useState,
+} from 'react'
+import {
   Activity,
   Boxes,
   CheckCircle2,
@@ -16,7 +19,9 @@ import {
   getAgentTelemetry,
   getInventorySummary,
   getResourceHealth,
+  getResourceInventory,
   type Agent,
+  type InventoryLifecycleStatus,
 } from '../api/agents'
 import { useAuth } from '../auth/useAuth'
 
@@ -29,6 +34,23 @@ function ResourceCard({
   accessToken: string
   workspaceId: string
 }) {
+  const [
+    inventoryExpanded,
+    setInventoryExpanded,
+  ] = useState(false)
+
+  const [
+    inventoryKind,
+    setInventoryKind,
+  ] = useState<string | undefined>()
+
+  const [
+    inventoryLifecycle,
+    setInventoryLifecycle,
+  ] = useState<
+    InventoryLifecycleStatus | undefined
+  >()
+
   const health = useQuery({
     queryKey: [
       'resource-health',
@@ -57,6 +79,32 @@ function ResourceCard({
         agent.resource_id,
       ),
     refetchInterval: 30_000,
+  })
+
+  const inventoryItems = useQuery({
+    queryKey: [
+      'inventory-items',
+      workspaceId,
+      agent.resource_id,
+      inventoryKind ?? 'all',
+      inventoryLifecycle ?? 'all',
+    ],
+    queryFn: () =>
+      getResourceInventory(
+        accessToken,
+        workspaceId,
+        agent.resource_id,
+        {
+          kind: inventoryKind,
+          lifecycleStatus:
+            inventoryLifecycle,
+        },
+      ),
+    enabled: inventoryExpanded,
+    refetchInterval:
+      inventoryExpanded
+        ? 30_000
+        : false,
   })
 
   const telemetry = useQuery({
@@ -217,6 +265,220 @@ function ResourceCard({
             </span>
           ))}
         </div>
+      )}
+
+      <button
+        type="button"
+        className="sidebar-action"
+        aria-expanded={inventoryExpanded}
+        onClick={() =>
+          setInventoryExpanded(
+            (value) => !value,
+          )
+        }
+      >
+        {inventoryExpanded
+          ? 'Hide inventory detail'
+          : 'Show inventory detail'}
+      </button>
+
+      {inventoryExpanded && (
+        <section>
+          <div className="inventory-kinds">
+            <span>Kind:</span>
+
+            <button
+              type="button"
+              className="sidebar-action"
+              disabled={
+                inventoryKind === undefined
+              }
+              onClick={() =>
+                setInventoryKind(undefined)
+              }
+            >
+              all
+            </button>
+
+            {Object.keys(
+              inventory.data?.kinds ?? {},
+            ).map((kind) => (
+              <button
+                type="button"
+                className="sidebar-action"
+                key={kind}
+                disabled={
+                  inventoryKind === kind
+                }
+                onClick={() =>
+                  setInventoryKind(kind)
+                }
+              >
+                {kind}
+              </button>
+            ))}
+          </div>
+
+          <div className="inventory-kinds">
+            <span>Lifecycle:</span>
+
+            <button
+              type="button"
+              className="sidebar-action"
+              disabled={
+                inventoryLifecycle
+                  === undefined
+              }
+              onClick={() =>
+                setInventoryLifecycle(
+                  undefined,
+                )
+              }
+            >
+              all
+            </button>
+
+            {(
+              [
+                'observed',
+                'stale',
+                'absent',
+              ] as const
+            ).map((state) => (
+              <button
+                type="button"
+                className="sidebar-action"
+                key={state}
+                disabled={
+                  inventoryLifecycle
+                    === state
+                }
+                onClick={() =>
+                  setInventoryLifecycle(
+                    state,
+                  )
+                }
+              >
+                {state}
+              </button>
+            ))}
+          </div>
+
+          {inventoryItems.isLoading && (
+            <div className="placeholder">
+              Loading inventory detail…
+            </div>
+          )}
+
+          {inventoryItems.isError && (
+            <div className="auth-error">
+              Inventory detail unavailable.
+            </div>
+          )}
+
+          {inventoryItems.isSuccess
+            && inventoryItems.data.length
+              === 0
+            && (
+              <div className="empty-state">
+                No inventory items match
+                the selected filters.
+              </div>
+            )}
+
+          {inventoryItems.isSuccess
+            && inventoryItems.data.length
+              > 0
+            && (
+              <>
+                <div className="inventory-kinds">
+                  <span>
+                    Items: {
+                      inventoryItems
+                        .data.length
+                    }
+                  </span>
+
+                  {inventoryKind && (
+                    <span>
+                      Kind: {inventoryKind}
+                    </span>
+                  )}
+
+                  {inventoryLifecycle && (
+                    <span>
+                      Lifecycle: {
+                        inventoryLifecycle
+                      }
+                    </span>
+                  )}
+                </div>
+
+                <div className="finding-list">
+                  {inventoryItems.data.map(
+                    (item) => (
+                      <div key={item.id}>
+                        <strong>
+                          {item.name}
+                        </strong>
+
+                        {' · '}
+                        {item.kind}
+                        {' · '}
+
+                        <span className="status-badge">
+                          {
+                            item.lifecycle_status
+                          }
+                        </span>
+
+                        <div className="inventory-kinds">
+                          <span>
+                            Status: {
+                              item.status
+                            }
+                          </span>
+
+                          <span>
+                            External ID: {
+                              item.external_id
+                            }
+                          </span>
+
+                          <span>
+                            Observed: {
+                              new Date(
+                                item.observed_at,
+                              ).toLocaleString()
+                            }
+                          </span>
+
+                          <span>
+                            Last seen: {
+                              item.last_seen_at
+                                ? new Date(
+                                    item.last_seen_at,
+                                  )
+                                    .toLocaleString()
+                                : '—'
+                            }
+                          </span>
+
+                          <span>
+                            Attributes: {
+                              Object.keys(
+                                item.attributes,
+                              ).length
+                            }
+                          </span>
+                        </div>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </>
+            )}
+        </section>
       )}
 
       {telemetry.isSuccess && (
