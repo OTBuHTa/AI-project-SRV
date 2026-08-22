@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.2.6-alpha` — Live Operations Dashboard.
+`v0.2.7-alpha` — Infrastructure telemetry drill-down.
 
 ## Architecture principles
 - AI Core runs on the workstation.
