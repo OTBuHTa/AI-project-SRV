@@ -8,7 +8,6 @@ import {
   ClipboardList,
   LayoutDashboard,
   LogOut,
-  Settings,
   ShieldCheck,
 } from 'lucide-react'
 import {
@@ -36,25 +35,6 @@ import { Login } from './pages/Login'
 import { Resources } from './pages/Resources'
 import { WorkspaceSelect } from './pages/WorkspaceSelect'
 
-function Placeholder({
-  title,
-}: {
-  title: string
-}) {
-  return (
-    <div className="placeholder-page">
-      <p className="eyebrow">
-        AI-project SRV
-      </p>
-      <h1>{title}</h1>
-      <p>
-        This module is queued for the next
-        vertical slice.
-      </p>
-    </div>
-  )
-}
-
 const nav = [
   ['/', 'Dashboard', LayoutDashboard],
   ['/infrastructure', 'Infrastructure', Activity],
@@ -65,7 +45,6 @@ const nav = [
   ['/notifications', 'Notifications', Bell],
   ['/backups', 'Backups', Archive],
   ['/audit', 'Audit', ClipboardList],
-  ['/settings', 'Settings', Settings],
 ] as const
 
 function LoadingScreen() {
@@ -252,12 +231,6 @@ function ProtectedShell() {
           <Route
             path="/audit"
             element={<Audit />}
-          />
-          <Route
-            path="/settings"
-            element={
-              <Placeholder title="Settings" />
-            }
           />
           <Route
             path="*"

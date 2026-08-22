@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import {
   Activity,
   Archive,
@@ -9,9 +10,13 @@ import {
   Cpu,
   Database,
   Server,
+  ShieldCheck,
   TriangleAlert,
 } from 'lucide-react'
 
+import {
+  getActionPlans,
+} from '../api/actions'
 import {
   getAgents,
   type Agent,
@@ -228,6 +233,22 @@ export function Dashboard() {
     refetchInterval: 15_000,
   })
 
+  const actions = useQuery({
+    queryKey: [
+      'action-plans',
+      workspaceId,
+    ],
+    queryFn: () =>
+      getActionPlans(
+        token!,
+        workspaceId!,
+      ),
+    enabled: Boolean(
+      token && workspaceId,
+    ),
+    refetchInterval: 10_000,
+  })
+
   const api = useQuery({
     queryKey: ['system', 'api'],
     queryFn: getApiInfo,
@@ -357,6 +378,34 @@ export function Dashboard() {
 
   const auditEvents =
     audit.data ?? []
+
+  const actionPlans =
+    actions.data ?? []
+
+  const awaitingApproval =
+    actionPlans.filter(
+      (plan) =>
+        plan.status === 'pending_approval',
+    ).length
+
+  const queuedActions =
+    actionPlans.filter(
+      (plan) =>
+        plan.status === 'queued',
+    ).length
+
+  const verifyingActions =
+    actionPlans.filter(
+      (plan) =>
+        plan.status === 'verifying',
+    ).length
+
+  const failedActions =
+    actionPlans.filter(
+      (plan) =>
+        plan.status === 'failed'
+        || plan.status === 'verification_failed',
+    ).length
 
   return (
     <>
@@ -760,6 +809,80 @@ export function Dashboard() {
               </div>
             </>
           )}
+        </article>
+
+        <article className="panel">
+          <div className="panel__title">
+            <ShieldCheck size={20} />
+            <h2>Action queue</h2>
+          </div>
+
+          {actions.isLoading && (
+            <div className="placeholder">
+              Loading action plans…
+            </div>
+          )}
+
+          {actions.isError && (
+            <div className="placeholder">
+              Action queue unavailable.
+            </div>
+          )}
+
+          {actions.isSuccess
+            && actionPlans.length === 0
+            && (
+              <div className="placeholder">
+                No action plans.
+              </div>
+            )}
+
+          {actions.isSuccess
+            && actionPlans.length > 0
+            && (
+              <>
+                <div className="readiness-row">
+                  <span>Awaiting approval</span>
+                  <strong>{awaitingApproval}</strong>
+                </div>
+
+                <div className="readiness-row">
+                  <span>Queued</span>
+                  <strong>{queuedActions}</strong>
+                </div>
+
+                <div className="readiness-row">
+                  <span>Verifying</span>
+                  <strong>{verifyingActions}</strong>
+                </div>
+
+                <div className="readiness-row">
+                  <span>Failed</span>
+                  <strong>{failedActions}</strong>
+                </div>
+
+                {actionPlans
+                  .slice(0, 4)
+                  .map((plan) => (
+                    <div
+                      className="readiness-row"
+                      key={plan.id}
+                    >
+                      <span>{plan.capability}</span>
+                      <strong>
+                        {plan.status.toUpperCase()}
+                      </strong>
+                    </div>
+                  ))}
+
+                <div className="readiness-row">
+                  <span>Policy queue</span>
+                  <Link to="/actions">
+                    Open actions
+                  </Link>
+                </div>
+              </>
+            )}
         </article>
 
         <article className="panel">
