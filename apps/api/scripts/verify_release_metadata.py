@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 from app.version import API_VERSION
@@ -32,6 +33,13 @@ def _version_key(version: str) -> tuple[int, int, int]:
         int(match.group("minor")),
         int(match.group("patch")),
     )
+
+
+def _package_version_for_release(
+    version: str,
+) -> str:
+    major, minor, patch = _version_key(version)
+    return f"{major}.{minor}.{patch}a0"
 
 
 def _release_notes(repo_root: Path) -> list[tuple[Path, str]]:
@@ -94,12 +102,51 @@ def verify_release_metadata(
 
     readme = repo_root / "README.md"
     release_note = repo_root / "docs" / f"RELEASE-v{version}.md"
+    pyproject = (
+        repo_root
+        / "apps"
+        / "api"
+        / "pyproject.toml"
+    )
 
     try:
         current_version_key = _version_key(version)
     except ValueError as exc:
         errors.append(str(exc))
         current_version_key = None
+
+    expected_package_version = (
+        _package_version_for_release(version)
+        if current_version_key is not None
+        else None
+    )
+
+    if not pyproject.is_file():
+        errors.append(f"pyproject not found: {pyproject}")
+    elif expected_package_version is not None:
+        try:
+            pyproject_data = tomllib.loads(
+                pyproject.read_text(encoding="utf-8")
+            )
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            errors.append(
+                f"{pyproject}: unable to read project metadata: {exc}"
+            )
+        else:
+            project = pyproject_data.get("project")
+            package_version = (
+                project.get("version")
+                if isinstance(project, dict)
+                else None
+            )
+
+            if package_version != expected_package_version:
+                errors.append(
+                    f"{pyproject}: project.version "
+                    f"{package_version!r} does not match "
+                    f"runtime version v{version}; expected "
+                    f"{expected_package_version!r}"
+                )
 
     if not readme.is_file():
         errors.append(f"README not found: {readme}")

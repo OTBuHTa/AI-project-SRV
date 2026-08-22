@@ -11,11 +11,29 @@ def _write_repo(
     version: str = VERSION,
     milestone: str | None = None,
     release_header: str | None = None,
+    package_version: str | None = None,
     extra_release_versions: tuple[str, ...] = (),
     extra_release_headers: tuple[tuple[str, str], ...] = (),
 ) -> Path:
     if milestone is None:
         milestone = version
+
+    if package_version is None:
+        package_version = (
+            verifier._package_version_for_release(
+                version
+            )
+        )
+
+    api_dir = tmp_path / "apps" / "api"
+    api_dir.mkdir(parents=True)
+
+    (api_dir / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "test-api"\n'
+        f'version = "{package_version}"\n',
+        encoding="utf-8",
+    )
 
     readme = tmp_path / "README.md"
     readme.write_text(
@@ -62,6 +80,28 @@ def test_verify_release_metadata_accepts_consistent_metadata(
         f"Verified release metadata for v{VERSION}."
         in capsys.readouterr().out
     )
+
+
+def test_verify_release_metadata_rejects_package_version_mismatch(
+    tmp_path,
+    capsys,
+):
+    root = _write_repo(
+        tmp_path,
+        release_header=f"# v{VERSION}",
+        package_version="0.1.34a0",
+    )
+
+    assert verifier.verify_release_metadata(root, VERSION) == 1
+
+    output = capsys.readouterr().out
+
+    assert (
+        "project.version '0.1.34a0' does not match "
+        "runtime version v0.1.35-alpha"
+        in output
+    )
+    assert "expected '0.1.35a0'" in output
 
 
 def test_verify_release_metadata_rejects_stale_current_milestone(
