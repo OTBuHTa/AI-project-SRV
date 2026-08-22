@@ -4,6 +4,8 @@ import {
   Clock3,
   Database,
   Play,
+  ShieldCheck,
+  TriangleAlert,
 } from 'lucide-react'
 import {
   useMutation,
@@ -13,8 +15,10 @@ import {
 
 import {
   createBackup,
+  getActiveBackupAlertEvents,
   getBackupHealth,
   getBackupJobs,
+  getBackupProtection,
   getBackupSchedule,
   getBackupStatus,
   getBackupStorageHealth,
@@ -70,12 +74,19 @@ export function Backups() {
         health,
         storage,
         schedule,
+        protection,
+        activeAlerts,
       ] = await Promise.all([
         getBackupJobs(token!, workspaceId!),
         getBackupStatus(token!, workspaceId!),
         getBackupHealth(token!, workspaceId!),
         getBackupStorageHealth(token!, workspaceId!),
         getBackupSchedule(token!, workspaceId!),
+        getBackupProtection(token!, workspaceId!),
+        getActiveBackupAlertEvents(
+          token!,
+          workspaceId!,
+        ),
       ])
 
       return {
@@ -84,6 +95,8 @@ export function Backups() {
         health,
         storage,
         schedule,
+        protection,
+        activeAlerts,
       }
     },
     enabled: Boolean(
@@ -214,6 +227,124 @@ export function Backups() {
                 .scheduler_lag_seconds,
             )}
           </small>
+        </article>
+      </section>
+
+      <section className="ops-grid">
+        <article className="panel ops-panel">
+          <div className="ops-title">
+            <ShieldCheck size={18} />
+            <strong>Protection summary</strong>
+          </div>
+
+          <div className="ops-details">
+            <div>
+              <span>Protected</span>
+              <strong>
+                {data
+                  ? (
+                      data.protection.protected
+                        ? 'yes'
+                        : 'no'
+                    )
+                  : '—'}
+              </strong>
+            </div>
+
+            <div>
+              <span>Status</span>
+              <strong>
+                {data?.protection.status ?? '—'}
+              </strong>
+            </div>
+
+            <div>
+              <span>Last verified</span>
+              <strong>
+                {formatDate(
+                  data?.protection
+                    .last_verified_at,
+                )}
+              </strong>
+            </div>
+
+            <div>
+              <span>Protection alerts</span>
+              <strong>
+                {data?.protection.alerts.length
+                  ?? '—'}
+              </strong>
+            </div>
+          </div>
+
+          {data?.protection.reason && (
+            <div className="ops-empty">
+              {data.protection.reason}
+            </div>
+          )}
+        </article>
+
+        <article className="panel ops-panel">
+          <div className="ops-title">
+            <TriangleAlert size={18} />
+            <strong>Active backup alerts</strong>
+          </div>
+
+          {!data && (
+            <div className="ops-empty">
+              Loading active alerts…
+            </div>
+          )}
+
+          {data
+            && data.activeAlerts.length === 0
+            && (
+              <div className="ops-empty">
+                No active backup alerts.
+              </div>
+            )}
+
+          <div className="ops-list">
+            {data?.activeAlerts.map(
+              (alert) => (
+                <article
+                  className="ops-row"
+                  key={alert.id}
+                >
+                  <div className="ops-row__main">
+                    <div className="ops-row__heading">
+                      <TriangleAlert
+                        size={16}
+                      />
+
+                      <strong>
+                        {alert.code}
+                      </strong>
+
+                      <span className="status-badge">
+                        {alert.severity}
+                      </span>
+                    </div>
+
+                    <small>
+                      last seen{' '}
+                      {formatDate(
+                        alert.last_seen_at,
+                      )}
+                      {' · '}
+                      {alert.acknowledged_at
+                        ? 'acknowledged'
+                        : 'unacknowledged'}
+                    </small>
+                  </div>
+
+                  <span>
+                    {alert.message}
+                  </span>
+                </article>
+              ),
+            )}
+          </div>
         </article>
       </section>
 

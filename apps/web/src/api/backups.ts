@@ -52,6 +52,36 @@ export type BackupSchedule = {
   next_run_at: string | null
 }
 
+export type BackupAlert = {
+  severity: string
+  code: string
+  message: string
+}
+
+export type BackupProtection = {
+  status: string
+  reason: string
+  protected: boolean
+  last_verified_at: string | null
+  failed_jobs: number
+  scheduler_lag_seconds: number
+  alerts: BackupAlert[]
+}
+
+export type BackupAlertEvent = {
+  id: string
+  workspace_id: string
+  code: string
+  severity: string
+  message: string
+  active: boolean
+  first_seen_at: string
+  last_seen_at: string
+  resolved_at: string | null
+  acknowledged_at: string | null
+  acknowledged_by: string | null
+}
+
 export function getBackupJobs(
   accessToken: string,
   workspaceId: string,
@@ -118,6 +148,36 @@ export function getBackupSchedule(
 ) {
   return apiJson<BackupSchedule | null>(
     '/api/v1/backups/schedule',
+    {
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
+export function getBackupProtection(
+  accessToken: string,
+  workspaceId: string,
+) {
+  return apiJson<BackupProtection>(
+    '/api/v1/backups/protection',
+    {
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
+export function getActiveBackupAlertEvents(
+  accessToken: string,
+  workspaceId: string,
+) {
+  return apiJson<BackupAlertEvent[]>(
+    '/api/v1/backups/alert-events/active',
     {
       headers: workspaceHeaders(
         accessToken,
