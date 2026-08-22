@@ -223,6 +223,23 @@ export function getBackupAlertEvents(
   )
 }
 
+export function acknowledgeBackupAlert(
+  accessToken: string,
+  workspaceId: string,
+  eventId: string,
+) {
+  return apiJson<BackupAlertEvent>(
+    `/api/v1/backups/alert-events/${eventId}/acknowledge`,
+    {
+      method: 'POST',
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
 export function createBackup(
   accessToken: string,
   workspaceId: string,
