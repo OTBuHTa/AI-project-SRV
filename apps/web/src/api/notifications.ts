@@ -251,6 +251,81 @@ export function getNotificationDeliveryProblemCount(
   )
 }
 
+
+export type NotificationDestinationCreate = {
+  name: string
+  channel: 'webhook'
+  endpoint: string
+  enabled: boolean
+}
+
+export type NotificationDestinationUpdate = {
+  name?: string
+  endpoint?: string
+  enabled?: boolean
+}
+
+export function createNotificationDestination(
+  accessToken: string,
+  workspaceId: string,
+  payload: NotificationDestinationCreate,
+) {
+  return apiJson<NotificationDestination>(
+    '/api/v1/notifications/destinations',
+    {
+      method: 'POST',
+      headers: {
+        ...workspaceHeaders(
+          accessToken,
+          workspaceId,
+        ),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
+export function updateNotificationDestination(
+  accessToken: string,
+  workspaceId: string,
+  destinationId: string,
+  payload: NotificationDestinationUpdate,
+) {
+  return apiJson<NotificationDestination>(
+    `/api/v1/notifications/destinations/${destinationId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        ...workspaceHeaders(
+          accessToken,
+          workspaceId,
+        ),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
+export function deleteNotificationDestination(
+  accessToken: string,
+  workspaceId: string,
+  destinationId: string,
+) {
+  return apiJson<void>(
+    `/api/v1/notifications/destinations/${destinationId}`,
+    {
+      method: 'DELETE',
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
+
 export function getNotificationDestinations(
   accessToken: string,
   workspaceId: string,
