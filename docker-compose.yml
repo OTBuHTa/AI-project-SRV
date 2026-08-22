@@ -54,7 +54,21 @@ services:
       proxy:
         ipv4_address: 172.30.0.3
 
-
+  migration:
+    profiles: ["tools"]
+    build:
+      context: ./apps/api
+      args:
+        APP_BUILD_REVISION: ${AI_SRV_BUILD_REVISION:-unknown}
+    env_file:
+      - ${AI_SRV_ENV_FILE:-.env}
+    command:
+      - alembic
+      - upgrade
+      - head
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   web:
     build:

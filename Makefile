@@ -9,7 +9,7 @@ logs:
 	docker compose logs -f api
 
 migrate:
-	docker compose exec api alembic upgrade head
+	docker compose --profile tools run --rm --build migration
 
 test:
 	cd apps/api && pytest -q

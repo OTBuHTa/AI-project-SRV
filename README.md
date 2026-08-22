@@ -33,7 +33,7 @@ Local-first AI infrastructure management platform.
 ## Quick start
 1. Copy `.env.example` to `.env` and replace `JWT_SECRET`.
 2. Run `docker compose up --build -d`.
-3. Run `docker compose exec api alembic upgrade head`.
+3. Run `docker compose --profile tools run --rm --build migration`.
 4. Open `http://localhost:8000/docs`.
 5. Call `POST /api/v1/auth/bootstrap` once to create the initial owner/workspace.
 6. Set `BOOTSTRAP_ENABLED=false` after initialization before external exposure.
