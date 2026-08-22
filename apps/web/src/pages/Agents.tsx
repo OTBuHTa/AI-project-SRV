@@ -1,4 +1,7 @@
 import {
+  useState,
+} from 'react'
+import {
   Activity,
   Bot,
   Clock3,
@@ -8,11 +11,15 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import {
+  useQuery,
+  useMutation,
+} from '@tanstack/react-query'
 
 import {
   getAgents,
   type Agent,
+  rotateAgentToken,
 } from '../api/agents'
 import {
   getActiveAgentLifecycleAlerts,
@@ -60,8 +67,12 @@ function lastSeen(
 
 function AgentCard({
   agent,
+  rotating,
+  onRotate,
 }: {
   agent: Agent
+  rotating: boolean
+  onRotate: (agent: Agent) => void
 }) {
   const metrics = agent.metrics
 
@@ -160,6 +171,33 @@ function AgentCard({
           </strong>
         </div>
       </div>
+
+      <div className="notification-filter-actions">
+        <button
+          type="button"
+          className="sidebar-action"
+          disabled={
+            rotating
+            || agent.status === 'revoked'
+          }
+          onClick={() => {
+            const confirmed = window.confirm(
+              'Rotate the token for '
+              + agent.hostname
+              + '? The current token will become '
+              + 'invalid immediately.',
+            )
+
+            if (confirmed) {
+              onRotate(agent)
+            }
+          }}
+        >
+          {rotating
+            ? 'Rotating…'
+            : 'Rotate agent token'}
+        </button>
+      </div>
     </article>
   )
 }
@@ -174,6 +212,18 @@ export function Agents() {
 
   const workspaceId =
     auth.workspace?.id
+
+
+  const [
+    rotatedCredential,
+    setRotatedCredential,
+  ] = useState<{
+    agentId: string
+    hostname: string
+    agentToken: string
+    expiresAt: string
+    rotatedAt: string
+  } | null>(null)
 
   const agents = useQuery({
     queryKey: [
@@ -228,6 +278,32 @@ export function Agents() {
     refetchInterval: 15_000,
   })
 
+  const rotateToken = useMutation({
+    mutationFn: (agent: Agent) =>
+      rotateAgentToken(
+        token!,
+        workspaceId!,
+        agent.id,
+      ),
+    onMutate: () => {
+      setRotatedCredential(null)
+    },
+    onSuccess: (result, agent) => {
+      setRotatedCredential({
+        agentId: agent.id,
+        hostname: agent.hostname,
+        agentToken: result.agent_token,
+        expiresAt:
+          result.agent_token_expires_at,
+        rotatedAt:
+          result.token_rotated_at,
+      })
+
+      void agents.refetch()
+      void lifecycle.refetch()
+    },
+  })
+
   const lifecycleData =
     lifecycle.data
 
@@ -261,6 +337,79 @@ export function Agents() {
           Failed to load agent lifecycle
           diagnostics.
         </div>
+      )}
+
+
+      {rotateToken.isError && (
+        <div className="auth-error">
+          Agent token rotation failed.
+        </div>
+      )}
+
+      {rotatedCredential && (
+        <section className="panel ops-panel">
+          <div className="ops-title">
+            <ShieldCheck size={18} />
+            <div>
+              <strong>
+                New agent token
+              </strong>
+              <small>
+                {rotatedCredential.hostname}
+                {' · shown only in this page state'}
+              </small>
+            </div>
+          </div>
+
+          <div className="ops-details">
+            <div>
+              <span>Agent</span>
+              <code>
+                {rotatedCredential.agentId}
+              </code>
+            </div>
+
+            <div>
+              <span>Rotated</span>
+              <strong>
+                {lastSeen(
+                  rotatedCredential.rotatedAt,
+                )}
+              </strong>
+            </div>
+
+            <div>
+              <span>Expires</span>
+              <strong>
+                {lastSeen(
+                  rotatedCredential.expiresAt,
+                )}
+              </strong>
+            </div>
+          </div>
+
+          <div className="ops-empty">
+            Save this token in the agent
+            configuration before dismissing it.
+            The previous token is no longer valid.
+          </div>
+
+          <code>
+            {rotatedCredential.agentToken}
+          </code>
+
+          <div className="notification-filter-actions">
+            <button
+              type="button"
+              className="sidebar-action"
+              onClick={() =>
+                setRotatedCredential(null)
+              }
+            >
+              Dismiss token
+            </button>
+          </div>
+        </section>
       )}
 
       <section className="ops-stat-grid">
@@ -555,6 +704,16 @@ export function Agents() {
           <AgentCard
             key={agent.id}
             agent={agent}
+            rotating={
+              rotateToken.isPending
+              && rotateToken.variables?.id
+                === agent.id
+            }
+            onRotate={(targetAgent) =>
+              rotateToken.mutate(
+                targetAgent,
+              )
+            }
           />
         ))}
       </section>

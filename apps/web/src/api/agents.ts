@@ -89,6 +89,29 @@ export type InventoryFilters = {
   lifecycleStatus?: InventoryLifecycleStatus
 }
 
+export type AgentTokenRotateResponse = {
+  agent_token: string
+  agent_token_expires_at: string
+  token_rotated_at: string
+}
+
+export function rotateAgentToken(
+  accessToken: string,
+  workspaceId: string,
+  agentId: string,
+) {
+  return apiJson<AgentTokenRotateResponse>(
+    `/api/v1/agents/${agentId}/token/rotate`,
+    {
+      method: 'POST',
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
 export function getAgents(
   accessToken: string,
   workspaceId: string,
