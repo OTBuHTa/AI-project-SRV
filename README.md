@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.3.8-alpha` — Agent token rotation from the Web Control Center.
+`v0.3.9-alpha` — Agent revocation management from the Web Control Center.
 
 ## Architecture principles
 - AI Core runs on the workstation.
