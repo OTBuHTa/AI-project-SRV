@@ -163,6 +163,35 @@ export function getBackupSchedule(
   )
 }
 
+
+export type BackupScheduleUpdate = {
+  enabled: boolean
+  interval_minutes: number
+  retention_keep_last: number
+  retention_max_age_days: number
+}
+
+export function updateBackupSchedule(
+  accessToken: string,
+  workspaceId: string,
+  payload: BackupScheduleUpdate,
+) {
+  return apiJson<BackupSchedule>(
+    '/api/v1/backups/schedule',
+    {
+      method: 'PUT',
+      headers: {
+        ...workspaceHeaders(
+          accessToken,
+          workspaceId,
+        ),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
 export function getBackupProtection(
   accessToken: string,
   workspaceId: string,
