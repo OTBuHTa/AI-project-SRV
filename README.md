@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.2.9-alpha` — Operational visibility expansion.
+`v0.3.0-alpha` — Operational detail and AI history expansion.
 
 ## Architecture principles
 - AI Core runs on the workstation.
