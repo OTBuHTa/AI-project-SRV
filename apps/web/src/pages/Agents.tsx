@@ -5,6 +5,8 @@ import {
   Cpu,
   HardDrive,
   MemoryStick,
+  ShieldCheck,
+  TriangleAlert,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
@@ -12,6 +14,10 @@ import {
   getAgents,
   type Agent,
 } from '../api/agents'
+import {
+  getActiveAgentLifecycleAlerts,
+  getAgentTokenLifecycleDiagnostics,
+} from '../api/monitoring'
 import { useAuth } from '../auth/useAuth'
 import { useWorkspaceTelemetry } from '../realtime/useWorkspaceTelemetry'
 
@@ -184,6 +190,40 @@ export function Agents() {
     refetchInterval: 15_000,
   })
 
+  const lifecycle = useQuery({
+    queryKey: [
+      'agent-lifecycle',
+      workspaceId,
+    ],
+    queryFn: async () => {
+      const [
+        diagnostics,
+        activeAlerts,
+      ] = await Promise.all([
+        getAgentTokenLifecycleDiagnostics(
+          token!,
+          workspaceId!,
+        ),
+        getActiveAgentLifecycleAlerts(
+          token!,
+          workspaceId!,
+        ),
+      ])
+
+      return {
+        diagnostics,
+        activeAlerts,
+      }
+    },
+    enabled: Boolean(
+      token && workspaceId,
+    ),
+    refetchInterval: 15_000,
+  })
+
+  const lifecycleData =
+    lifecycle.data
+
   return (
     <>
       <header className="page-header">
@@ -208,6 +248,186 @@ export function Agents() {
           WS {realtime.toUpperCase()}
         </div>
       </header>
+
+      {lifecycle.isError && (
+        <div className="auth-error">
+          Failed to load agent lifecycle
+          diagnostics.
+        </div>
+      )}
+
+      <section className="ops-stat-grid">
+        <article className="ops-stat">
+          <span>Token lifecycle</span>
+          <strong>
+            {lifecycleData?.diagnostics.status
+              ?? '—'}
+          </strong>
+          <small>
+            {lifecycleData
+              ? (
+                  `${lifecycleData.diagnostics.issues.length}`
+                  + ' issue(s)'
+                )
+              : 'Loading…'}
+          </small>
+        </article>
+
+        <article className="ops-stat">
+          <span>Pending rotations</span>
+          <strong>
+            {lifecycleData?.diagnostics
+              .pending_rotations ?? '—'}
+          </strong>
+          <small>
+            of{' '}
+            {lifecycleData?.diagnostics
+              .agents_total ?? '—'} agents
+          </small>
+        </article>
+
+        <article className="ops-stat">
+          <span>Expired rotations</span>
+          <strong>
+            {lifecycleData?.diagnostics
+              .expired_pending_rotations
+              ?? '—'}
+          </strong>
+          <small>
+            Pending beyond prepare TTL
+          </small>
+        </article>
+
+        <article className="ops-stat">
+          <span>Incomplete rotations</span>
+          <strong>
+            {lifecycleData?.diagnostics
+              .incomplete_pending_rotations
+              ?? '—'}
+          </strong>
+          <small>
+            Inconsistent pending state
+          </small>
+        </article>
+      </section>
+
+      <section className="ops-grid">
+        <article className="panel ops-panel">
+          <div className="ops-title">
+            <ShieldCheck size={18} />
+            <strong>Token lifecycle state</strong>
+          </div>
+
+          <div className="ops-details">
+            <div>
+              <span>Agents</span>
+              <strong>
+                {lifecycleData?.diagnostics
+                  .agents_total ?? '—'}
+              </strong>
+            </div>
+
+            <div>
+              <span>Revoked with pending</span>
+              <strong>
+                {lifecycleData?.diagnostics
+                  .revoked_with_pending_rotation
+                  ?? '—'}
+              </strong>
+            </div>
+
+            <div>
+              <span>Oldest pending</span>
+              <strong>
+                {lifecycleData
+                  ? lastSeen(
+                      lifecycleData.diagnostics
+                        .oldest_pending_prepared_at,
+                    )
+                  : '—'}
+              </strong>
+            </div>
+
+            <div>
+              <span>Observed</span>
+              <strong>
+                {lifecycleData
+                  ? lastSeen(
+                      lifecycleData.diagnostics
+                        .observed_at,
+                    )
+                  : '—'}
+              </strong>
+            </div>
+          </div>
+        </article>
+
+        <article className="panel ops-panel">
+          <div className="ops-title">
+            <TriangleAlert size={18} />
+            <strong>
+              Active lifecycle alerts
+            </strong>
+          </div>
+
+          {lifecycle.isLoading && (
+            <div className="ops-empty">
+              Loading lifecycle alerts…
+            </div>
+          )}
+
+          {lifecycleData
+            && lifecycleData.activeAlerts.length
+              === 0
+            && (
+              <div className="ops-empty">
+                No active lifecycle alerts.
+              </div>
+            )}
+
+          <div className="ops-list">
+            {lifecycleData?.activeAlerts.map(
+              (alert) => (
+                <article
+                  className="ops-row"
+                  key={alert.id}
+                >
+                  <div className="ops-row__main">
+                    <div className="ops-row__heading">
+                      <TriangleAlert
+                        size={16}
+                      />
+
+                      <strong>
+                        {alert.code}
+                      </strong>
+
+                      <span className="status-badge">
+                        {alert.severity}
+                      </span>
+                    </div>
+
+                    <small>
+                      first seen{' '}
+                      {lastSeen(
+                        alert.first_seen_at,
+                      )}
+                      {' · last seen '}
+                      {lastSeen(
+                        alert.last_seen_at,
+                      )}
+                    </small>
+                  </div>
+
+                  <span>
+                    {alert.message}
+                  </span>
+                </article>
+              ),
+            )}
+          </div>
+        </article>
+      </section>
 
       {agents.isLoading && (
         <div className="panel">
