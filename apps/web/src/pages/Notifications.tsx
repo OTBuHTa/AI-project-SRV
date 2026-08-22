@@ -10,6 +10,10 @@ import { useQuery } from '@tanstack/react-query'
 import {
   getNotificationDeliveries,
   getNotificationDeliveryHealth,
+  getNotificationDeliveryProblemCount,
+  getNotificationDeliveryProblems,
+  getNotificationDestinations,
+  getNotificationRoutes,
 } from '../api/notifications'
 import { useAuth } from '../auth/useAuth'
 
@@ -71,7 +75,92 @@ export function Notifications() {
     refetchInterval: 10_000,
   })
 
+  const problems = useQuery({
+    queryKey: [
+      'notification-delivery-problems',
+      workspaceId,
+    ],
+    queryFn: () =>
+      getNotificationDeliveryProblems(
+        token!,
+        workspaceId!,
+        50,
+      ),
+    enabled: Boolean(
+      token && workspaceId,
+    ),
+    refetchInterval: 10_000,
+  })
+
+  const problemCount = useQuery({
+    queryKey: [
+      'notification-delivery-problem-count',
+      workspaceId,
+    ],
+    queryFn: () =>
+      getNotificationDeliveryProblemCount(
+        token!,
+        workspaceId!,
+      ),
+    enabled: Boolean(
+      token && workspaceId,
+    ),
+    refetchInterval: 10_000,
+  })
+
+  const destinations = useQuery({
+    queryKey: [
+      'notification-destinations',
+      workspaceId,
+    ],
+    queryFn: () =>
+      getNotificationDestinations(
+        token!,
+        workspaceId!,
+      ),
+    enabled: Boolean(
+      token && workspaceId,
+    ),
+    refetchInterval: 30_000,
+  })
+
+  const routes = useQuery({
+    queryKey: [
+      'notification-routes',
+      workspaceId,
+    ],
+    queryFn: () =>
+      getNotificationRoutes(
+        token!,
+        workspaceId!,
+      ),
+    enabled: Boolean(
+      token && workspaceId,
+    ),
+    refetchInterval: 30_000,
+  })
+
   const counts = health.data?.total
+
+  const destinationById = new Map(
+    (destinations.data ?? []).map(
+      (destination) => [
+        destination.id,
+        destination,
+      ],
+    ),
+  )
+
+  const enabledDestinations =
+    destinations.data?.filter(
+      (destination) =>
+        destination.enabled,
+    ).length ?? 0
+
+  const enabledRoutes =
+    routes.data?.filter(
+      (route) => route.enabled,
+    ).length ?? 0
 
   return (
     <>
@@ -94,7 +183,11 @@ export function Notifications() {
       </header>
 
       {(health.isError
-        || deliveries.isError) && (
+        || deliveries.isError
+        || problems.isError
+        || problemCount.isError
+        || destinations.isError
+        || routes.isError) && (
         <div className="auth-error">
           Failed to load notification
           observability.
@@ -145,6 +238,38 @@ export function Notifications() {
               : '—'}
           </small>
         </article>
+
+        <article className="ops-stat">
+          <span>Problems</span>
+          <strong>
+            {problemCount.data?.total ?? '—'}
+          </strong>
+          <small>
+            {problemCount.data
+              ? `${problemCount.data.backup} backup · ${problemCount.data.agent_lifecycle} lifecycle`
+              : 'Delivery problem records'}
+          </small>
+        </article>
+
+        <article className="ops-stat">
+          <span>Destinations</span>
+          <strong>
+            {destinations.data
+              ? `${enabledDestinations}/${destinations.data.length}`
+              : '—'}
+          </strong>
+          <small>Enabled / configured</small>
+        </article>
+
+        <article className="ops-stat">
+          <span>Routes</span>
+          <strong>
+            {routes.data
+              ? `${enabledRoutes}/${routes.data.length}`
+              : '—'}
+          </strong>
+          <small>Enabled / configured</small>
+        </article>
       </section>
 
       {health.data?.issues
@@ -167,6 +292,194 @@ export function Notifications() {
             </ul>
           </section>
         )}
+
+      <section className="panel ops-panel">
+        <div className="ops-title">
+          <TriangleAlert size={18} />
+          <div>
+            <strong>
+              Delivery problems
+            </strong>
+            <small>
+              Latest 50 problem records
+            </small>
+          </div>
+        </div>
+
+        {problems.isLoading && (
+          <div className="ops-empty">
+            Loading delivery problems…
+          </div>
+        )}
+
+        {problems.data?.items.length
+          === 0 && (
+          <div className="ops-empty">
+            No notification delivery problems.
+          </div>
+        )}
+
+        <div className="ops-list">
+          {problems.data?.items.map(
+            (delivery) => {
+              const destination =
+                delivery.destination_id
+                  ? destinationById.get(
+                      delivery.destination_id,
+                    )
+                  : undefined
+
+              return (
+                <article
+                  className="ops-row"
+                  key={delivery.id}
+                >
+                  <div className="ops-row__main">
+                    <div className="ops-row__heading">
+                      <TriangleAlert
+                        size={16}
+                      />
+
+                      <strong>
+                        {delivery.source}
+                      </strong>
+
+                      <span className="status-badge">
+                        {delivery.problem}
+                      </span>
+                    </div>
+
+                    <small>
+                      {destination?.name
+                        ?? delivery.destination_id
+                        ?? 'no destination'}
+                      {' · '}
+                      {delivery.channel}
+                      {' · '}
+                      attempts{' '}
+                      {delivery.attempts}/
+                      {delivery.max_attempts}
+                      {' · '}
+                      {formatDate(
+                        delivery.created_at,
+                      )}
+                    </small>
+                  </div>
+
+                  {delivery.last_error && (
+                    <code className="ops-error">
+                      {delivery.last_error}
+                    </code>
+                  )}
+                </article>
+              )
+            },
+          )}
+        </div>
+
+        {problems.data?.has_more && (
+          <div className="ops-empty">
+            Additional problem records exist
+            beyond this page.
+          </div>
+        )}
+      </section>
+
+      <section className="panel ops-panel">
+        <div className="ops-title">
+          <Bell size={18} />
+          <div>
+            <strong>
+              Delivery configuration
+            </strong>
+            <small>
+              Read-only destinations and routes
+            </small>
+          </div>
+        </div>
+
+        {destinations.isLoading
+          || routes.isLoading ? (
+          <div className="ops-empty">
+            Loading delivery configuration…
+          </div>
+        ) : null}
+
+        {destinations.data?.length === 0 && (
+          <div className="ops-empty">
+            No notification destinations.
+          </div>
+        )}
+
+        <div className="ops-list">
+          {destinations.data?.map(
+            (destination) => {
+              const destinationRoutes =
+                (routes.data ?? []).filter(
+                  (route) =>
+                    route.destination_id
+                    === destination.id,
+                )
+
+              return (
+                <article
+                  className="ops-row"
+                  key={destination.id}
+                >
+                  <div className="ops-row__main">
+                    <div className="ops-row__heading">
+                      <Bell size={16} />
+
+                      <strong>
+                        {destination.name}
+                      </strong>
+
+                      <span
+                        className={statusClass(
+                          destination.enabled
+                            ? 'healthy'
+                            : 'disabled',
+                        )}
+                      >
+                        {destination.enabled
+                          ? 'enabled'
+                          : 'disabled'}
+                      </span>
+                    </div>
+
+                    <small>
+                      {destination.channel}
+                      {' · '}
+                      {destinationRoutes.length}
+                      {' route(s)'}
+                    </small>
+                  </div>
+
+                  {destinationRoutes.length > 0 && (
+                    <div className="inventory-kinds">
+                      {destinationRoutes.map(
+                        (route) => (
+                          <span key={route.id}>
+                            {route.alert_code
+                              ?? 'any alert'}
+                            {' · '}
+                            {route.severity
+                              ?? 'any severity'}
+                            {' · '}
+                            {route.enabled
+                              ? 'enabled'
+                              : 'disabled'}
+                          </span>
+                        ),
+                      )}
+                    </div>
+                  )}
+                </article>
+              )
+            },
+          )}
+        </div>
+      </section>
 
       <section className="panel ops-panel">
         <div className="ops-title">

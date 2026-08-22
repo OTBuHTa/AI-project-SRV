@@ -50,6 +50,46 @@ export type NotificationDeliveryPage = {
   observed_at: string
 }
 
+export type NotificationDeliveryProblem =
+  NotificationDelivery & {
+    problem: string
+  }
+
+export type NotificationDeliveryProblemPage = {
+  items: NotificationDeliveryProblem[]
+  next_cursor: string | null
+  has_more: boolean
+  observed_at: string
+}
+
+export type NotificationDeliveryCount = {
+  total: number
+  backup: number
+  agent_lifecycle: number
+}
+
+export type NotificationDestination = {
+  id: string
+  workspace_id: string
+  name: string
+  channel: string
+  endpoint: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type NotificationRoute = {
+  id: string
+  workspace_id: string
+  destination_id: string
+  alert_code: string | null
+  severity: string | null
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
 export function getNotificationDeliveryHealth(
   accessToken: string,
   workspaceId: string,
@@ -72,6 +112,67 @@ export function getNotificationDeliveries(
 ) {
   return apiJson<NotificationDeliveryPage>(
     `/api/v1/notifications/deliveries/page?limit=${limit}`,
+    {
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
+export function getNotificationDeliveryProblems(
+  accessToken: string,
+  workspaceId: string,
+  limit = 50,
+) {
+  return apiJson<NotificationDeliveryProblemPage>(
+    `/api/v1/notifications/deliveries/problems/page?limit=${limit}`,
+    {
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
+export function getNotificationDeliveryProblemCount(
+  accessToken: string,
+  workspaceId: string,
+) {
+  return apiJson<NotificationDeliveryCount>(
+    '/api/v1/notifications/deliveries/problems/count',
+    {
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
+export function getNotificationDestinations(
+  accessToken: string,
+  workspaceId: string,
+) {
+  return apiJson<NotificationDestination[]>(
+    '/api/v1/notifications/destinations',
+    {
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
+export function getNotificationRoutes(
+  accessToken: string,
+  workspaceId: string,
+) {
+  return apiJson<NotificationRoute[]>(
+    '/api/v1/notifications/routes',
     {
       headers: workspaceHeaders(
         accessToken,
