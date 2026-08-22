@@ -58,6 +58,12 @@ export type BackupAlert = {
   message: string
 }
 
+export type BackupAlertsSummary = {
+  status: string
+  generated_at: string
+  alerts: BackupAlert[]
+}
+
 export type BackupProtection = {
   status: string
   reason: string
@@ -172,12 +178,42 @@ export function getBackupProtection(
   )
 }
 
+export function getBackupAlerts(
+  accessToken: string,
+  workspaceId: string,
+) {
+  return apiJson<BackupAlertsSummary>(
+    '/api/v1/backups/alerts',
+    {
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
 export function getActiveBackupAlertEvents(
   accessToken: string,
   workspaceId: string,
 ) {
   return apiJson<BackupAlertEvent[]>(
     '/api/v1/backups/alert-events/active',
+    {
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
+export function getBackupAlertEvents(
+  accessToken: string,
+  workspaceId: string,
+) {
+  return apiJson<BackupAlertEvent[]>(
+    '/api/v1/backups/alert-events',
     {
       headers: workspaceHeaders(
         accessToken,

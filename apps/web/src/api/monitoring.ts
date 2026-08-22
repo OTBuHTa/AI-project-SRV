@@ -58,3 +58,18 @@ export function getActiveAgentLifecycleAlerts(
     },
   )
 }
+
+export function getAgentLifecycleAlerts(
+  accessToken: string,
+  workspaceId: string,
+) {
+  return apiJson<AgentLifecycleAlertEvent[]>(
+    '/api/v1/monitoring/agent-lifecycle-alert-events',
+    {
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
