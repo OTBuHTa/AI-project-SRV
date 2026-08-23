@@ -29,6 +29,7 @@ import {
   updateNotificationRoute,
 } from '../api/notifications'
 import { useAuth } from '../auth/useAuth'
+import { hasPermission } from '../auth/permissions'
 
 function formatDate(
   value: string | null,
@@ -978,6 +979,12 @@ export function Notifications() {
   const token = auth.tokens?.access_token
   const workspaceId = auth.workspace?.id
 
+  const canManageNotifications =
+    hasPermission(
+      auth.workspace?.role,
+      'workspace.manage',
+    )
+
   const [
     draftFilters,
     setDraftFilters,
@@ -1218,7 +1225,7 @@ export function Notifications() {
         </div>
       </header>
 
-      {token && workspaceId && (
+      {token && workspaceId && canManageNotifications && (
         <NotificationDestinationManager
           accessToken={token}
           workspaceId={workspaceId}
@@ -1237,7 +1244,7 @@ export function Notifications() {
 
 
 
-      {token && workspaceId && (
+      {token && workspaceId && canManageNotifications && (
         <NotificationRouteManager
           accessToken={token}
           workspaceId={workspaceId}

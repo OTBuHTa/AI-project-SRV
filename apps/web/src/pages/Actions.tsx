@@ -28,6 +28,7 @@ import {
 } from '../api/agents'
 import { ApiError } from '../api/http'
 import { useAuth } from '../auth/useAuth'
+import { hasPermission } from '../auth/permissions'
 
 function formatDate(
   value: string | null,
@@ -139,6 +140,14 @@ function ActionCard({
   accessToken: string
   workspaceId: string
 }) {
+  const auth = useAuth()
+
+  const canApproveAction =
+    hasPermission(
+      auth.workspace?.role,
+      'action.approve',
+    )
+
   const queryClient =
     useQueryClient()
 
@@ -310,7 +319,7 @@ function ActionCard({
           <button
             type="button"
             className="danger-button"
-            disabled={busy}
+            disabled={!canApproveAction || (busy)}
             onClick={() => {
               const confirmed =
                 window.confirm(
@@ -334,7 +343,7 @@ function ActionCard({
           <button
             type="button"
             className="primary-button"
-            disabled={busy}
+            disabled={!canApproveAction || (busy)}
             onClick={() => {
               const confirmed =
                 window.confirm(
@@ -378,6 +387,12 @@ export function Actions() {
 
   const workspaceId =
     auth.workspace?.id
+
+  const canCreateAction =
+    hasPermission(
+      auth.workspace?.role,
+      'action.create',
+    )
 
   const [
     resourceId,
@@ -712,11 +727,11 @@ export function Actions() {
             <button
               className="primary-button"
               type="submit"
-              disabled={
+              disabled={!canCreateAction || (
                 create.isPending
                 || !resourceId
                 || !container
-              }
+              )}
             >
               <ShieldCheck size={17} />
               {create.isPending
