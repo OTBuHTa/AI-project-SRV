@@ -245,6 +245,346 @@ def command_verify(json_mode: bool) -> int:
     return emit(payload, json_mode)
 
 
+
+def compact_process(
+    result: subprocess.CompletedProcess[str],
+) -> dict:
+    payload = {
+        "rc": result.returncode,
+    }
+
+    if result.returncode != 0:
+        output = "\n".join(
+            line
+            for line in (
+                result.stdout + "\n" + result.stderr
+            ).splitlines()
+            if line.strip()
+        )
+
+        payload["error_tail"] = output.splitlines()[-20:]
+
+    return payload
+
+
+def ci_snapshot() -> dict:
+    api_root = ROOT / "apps/api"
+    web_root = ROOT / "apps/web"
+    pytest = ROOT / ".venv/bin/pytest"
+
+    jobs = [
+        (
+            "api_targeted",
+            (
+                str(pytest),
+                "-q",
+                "tests/test_monitoring_websocket_auth.py",
+            ),
+            api_root,
+        ),
+        (
+            "api_full",
+            (
+                str(pytest),
+                "-q",
+            ),
+            api_root,
+        ),
+        (
+            "web_lint",
+            (
+                "npm",
+                "run",
+                "lint",
+            ),
+            web_root,
+        ),
+        (
+            "web_build",
+            (
+                "npm",
+                "run",
+                "build",
+            ),
+            web_root,
+        ),
+        (
+            "compose_config",
+            (
+                "docker",
+                "compose",
+                "config",
+                "-q",
+            ),
+            ROOT,
+        ),
+        (
+            "diff_check",
+            (
+                "git",
+                "diff",
+                "--check",
+            ),
+            ROOT,
+        ),
+    ]
+
+    checks = {}
+    details = {}
+
+    for name, command, cwd in jobs:
+        result = run(
+            *command,
+            cwd=cwd,
+        )
+
+        checks[name] = result.returncode == 0
+        details[name] = compact_process(result)
+
+    return {
+        "ok": all(checks.values()),
+        "checks": checks,
+        "details": details,
+    }
+
+
+def runtime_snapshot() -> dict:
+    services = compose_services()
+    runtime = health()
+
+    health_data = runtime["health"] or {}
+    ready_data = runtime["ready"] or {}
+
+    checks = {
+        "services":
+            set(services) == EXPECTED_SERVICES,
+
+        "health":
+            health_data.get("status") == "ok",
+
+        "database":
+            ready_data.get(
+                "checks",
+                {},
+            ).get("database") is True,
+
+        "redis":
+            ready_data.get(
+                "checks",
+                {},
+            ).get("redis") is True,
+
+        "web":
+            runtime["web_http"] == "200",
+    }
+
+    return {
+        "ok": all(checks.values()),
+        "checks": checks,
+        "services": services,
+        "health": health_data,
+        "ready": ready_data,
+        "web_http": runtime["web_http"],
+    }
+
+
+def doctor_snapshot() -> dict:
+    checks = {}
+
+    for binary in (
+        "git",
+        "docker",
+        "curl",
+        "python3",
+        "npm",
+    ):
+        result = run(
+            "bash",
+            "-lc",
+            f"command -v {binary}",
+        )
+
+        checks[binary] = result.returncode == 0
+
+    compose = run(
+        "docker",
+        "compose",
+        "version",
+    )
+
+    checks["docker_compose"] = (
+        compose.returncode == 0
+    )
+
+    checks["env_exists"] = (
+        ROOT / ".env"
+    ).exists()
+
+    return {
+        "ok": all(checks.values()),
+        "checks": checks,
+    }
+
+
+def command_ci(json_mode: bool) -> int:
+    snapshot = ci_snapshot()
+
+    return emit(
+        {
+            "ok": snapshot["ok"],
+            "checks": snapshot["checks"],
+            "failures": {
+                name: detail
+                for name, detail
+                in snapshot["details"].items()
+                if detail["rc"] != 0
+            },
+        },
+        json_mode,
+    )
+
+
+def command_autopilot(json_mode: bool) -> int:
+    doctor = doctor_snapshot()
+    ci = ci_snapshot()
+    runtime = runtime_snapshot()
+    git = git_status()
+
+    checks = {
+        "doctor": doctor["ok"],
+        "ci": ci["ok"],
+        "runtime": runtime["ok"],
+    }
+
+    payload = {
+        "ok": all(checks.values()),
+        "mode": "safe-autopilot",
+        "checks": checks,
+        "branch": git["branch"],
+        "head": git["head"],
+        "working_tree_clean": not git["dirty"],
+        "runtime_version":
+            runtime["health"].get("version"),
+        "runtime_revision":
+            runtime["health"].get(
+                "build_revision"
+            ),
+        "next":
+            (
+                "production-gate"
+                if all(checks.values())
+                else "fix-failed-checks"
+            ),
+    }
+
+    failures = {
+        name: detail
+        for name, detail
+        in ci["details"].items()
+        if detail["rc"] != 0
+    }
+
+    if failures:
+        payload["ci_failures"] = failures
+
+    return emit(
+        payload,
+        json_mode,
+    )
+
+
+def command_production_gate(
+    json_mode: bool,
+) -> int:
+    git = git_status()
+    runtime = runtime_snapshot()
+
+    alembic = run(
+        "docker",
+        "compose",
+        "exec",
+        "-T",
+        "api",
+        "alembic",
+        "current",
+    )
+
+    logs = run(
+        "docker",
+        "compose",
+        "logs",
+        "--since=10m",
+        "--no-color",
+    )
+
+    log_text = (
+        logs.stdout
+        + "\n"
+        + logs.stderr
+    ).lower()
+
+    critical_patterns = (
+        "traceback",
+        "fatal",
+        "panic",
+        "uncaught",
+        "segmentation fault",
+    )
+
+    critical_logs = [
+        pattern
+        for pattern in critical_patterns
+        if pattern in log_text
+    ]
+
+    environment = (
+        runtime["health"].get("environment")
+    )
+
+    checks = {
+        "main_branch":
+            git["branch"] == "main",
+
+        "clean_tree":
+            not git["dirty"],
+
+        "runtime":
+            runtime["ok"],
+
+        "production_environment":
+            environment == "production",
+
+        "alembic_head":
+            (
+                alembic.returncode == 0
+                and
+                "0021_worker_operational_state (head)"
+                in alembic.stdout
+            ),
+
+        "critical_logs_none":
+            not critical_logs,
+    }
+
+    blockers = [
+        name
+        for name, passed in checks.items()
+        if not passed
+    ]
+
+    return emit(
+        {
+            "ok": all(checks.values()),
+            "gate": "production",
+            "checks": checks,
+            "blockers": blockers,
+            "environment": environment,
+            "branch": git["branch"],
+            "head": git["head"],
+        },
+        json_mode,
+    )
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="srvctl",
@@ -266,6 +606,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("status")
     sub.add_parser("test")
     sub.add_parser("verify")
+    sub.add_parser("ci")
+    sub.add_parser("production-gate")
+    sub.add_parser("autopilot")
 
     return parser
 
@@ -279,6 +622,9 @@ def main() -> int:
         "status": command_status,
         "test": command_test,
         "verify": command_verify,
+        "ci": command_ci,
+        "production-gate": command_production_gate,
+        "autopilot": command_autopilot,
     }
 
     return handlers[args.command](args.json)
