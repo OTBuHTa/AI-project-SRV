@@ -30,6 +30,7 @@ import {
   getAgentTokenLifecycleDiagnostics,
 } from '../api/monitoring'
 import { useAuth } from '../auth/useAuth'
+import { hasPermission } from '../auth/permissions'
 import { useWorkspaceTelemetry } from '../realtime/useWorkspaceTelemetry'
 
 function percent(
@@ -81,6 +82,20 @@ function AgentCard({
   onRotate: (agent: Agent) => void
   onRevoke: (agent: Agent) => void
 }) {
+  const auth = useAuth()
+
+  const canRotateAgent =
+    hasPermission(
+      auth.workspace?.role,
+      'agent.update',
+    )
+
+  const canRevokeAgent =
+    hasPermission(
+      auth.workspace?.role,
+      'agent.revoke',
+    )
+
   const metrics = agent.metrics
 
   return (
@@ -183,11 +198,11 @@ function AgentCard({
         <button
           type="button"
           className="sidebar-action"
-          disabled={
+          disabled={!canRotateAgent || (
             rotating
             || revoking
             || agent.status === 'revoked'
-          }
+          )}
           onClick={() => {
             const confirmed = window.confirm(
               'Rotate the token for '
@@ -209,11 +224,11 @@ function AgentCard({
         <button
           type="button"
           className="sidebar-action"
-          disabled={
+          disabled={!canRevokeAgent || (
             rotating
             || revoking
             || agent.status === 'revoked'
-          }
+          )}
           onClick={() => {
             const confirmed = window.confirm(
               'Revoke agent '
@@ -250,6 +265,12 @@ export function Agents() {
 
   const workspaceId =
     auth.workspace?.id
+
+  const canInstallAgent =
+    hasPermission(
+      auth.workspace?.role,
+      'agent.install',
+    )
 
 
   const [
@@ -668,11 +689,11 @@ export function Agents() {
             <button
               type="submit"
               className="primary-button"
-              disabled={
+              disabled={!canInstallAgent || (
                 !token
                 || !workspaceId
                 || createEnrollment.isPending
-              }
+              )}
             >
               {createEnrollment.isPending
                 ? 'Creating…'

@@ -25,6 +25,7 @@ import {
   renewMikroTikDhcp,
 } from '../api/mikrotik'
 import { useAuth } from '../auth/useAuth'
+import { hasPermission } from '../auth/permissions'
 import { useWorkspaceTelemetry } from '../realtime/useWorkspaceTelemetry'
 
 function percent(
@@ -158,6 +159,12 @@ export function Infrastructure() {
 
   const token = auth.tokens?.access_token
   const workspaceId = auth.workspace?.id
+
+  const canExecuteNetwork =
+    hasPermission(
+      auth.workspace?.role,
+      'network.execute',
+    )
 
   const realtimeStatus =
     useWorkspaceTelemetry()
@@ -557,9 +564,9 @@ export function Infrastructure() {
                       <button
                         type="button"
                         className="sidebar-action"
-                        disabled={
+                        disabled={!canExecuteNetwork || (
                           renew.isPending
-                        }
+                        )}
                         onClick={() =>
                           renew.mutate(
                             client.interface!,

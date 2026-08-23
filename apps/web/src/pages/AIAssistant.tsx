@@ -35,6 +35,7 @@ import {
   ApiError,
 } from '../api/http'
 import { useAuth } from '../auth/useAuth'
+import { hasPermission } from '../auth/permissions'
 
 type ChatEntry = {
   id: string
@@ -81,6 +82,12 @@ export function AIAssistant() {
 
   const workspaceId =
     auth.workspace?.id
+
+  const canCreateAction =
+    hasPermission(
+      auth.workspace?.role,
+      'action.create',
+    )
 
   const queryClient = useQueryClient()
 
@@ -647,6 +654,7 @@ export function AIAssistant() {
 
             {resourceId
               && containers.length > 0
+              && canCreateAction
               && (
                 <form
                   className="action-form"

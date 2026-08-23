@@ -31,6 +31,7 @@ import {
   type BackupScheduleUpdate,
 } from '../api/backups'
 import { useAuth } from '../auth/useAuth'
+import { hasPermission } from '../auth/permissions'
 
 function formatDate(
   value: string | null | undefined,
@@ -67,6 +68,12 @@ export function Backups() {
   const auth = useAuth()
   const token = auth.tokens?.access_token
   const workspaceId = auth.workspace?.id
+
+  const canManageBackups =
+    hasPermission(
+      auth.workspace?.role,
+      'workspace.manage',
+    )
   const queryClient = useQueryClient()
 
   const overview = useQuery({
@@ -207,11 +214,11 @@ export function Backups() {
         <button
           type="button"
           className="primary-button"
-          disabled={
+          disabled={!canManageBackups || (
             !token
             || !workspaceId
             || runBackup.isPending
-          }
+          )}
           onClick={() =>
             runBackup.mutate()
           }
@@ -440,7 +447,7 @@ export function Backups() {
                     <button
                       type="button"
                       className="sidebar-action"
-                      disabled={
+                      disabled={!canManageBackups || (
                         !token
                         || !workspaceId
                         || (
@@ -448,7 +455,7 @@ export function Backups() {
                           && acknowledgeAlert.variables
                             === alert.id
                         )
-                      }
+                      )}
                       onClick={() =>
                         acknowledgeAlert.mutate(
                           alert.id,
@@ -827,11 +834,11 @@ export function Backups() {
                   <button
                     type="submit"
                     className="sidebar-action"
-                    disabled={
+                    disabled={!canManageBackups || (
                       !token
                       || !workspaceId
                       || updateSchedule.isPending
-                    }
+                    )}
                   >
                     {updateSchedule.isPending
                       ? 'Saving…'
@@ -852,11 +859,11 @@ export function Backups() {
                 <button
                   type="button"
                   className="danger-button"
-                  disabled={
+                  disabled={!canManageBackups || (
                     !token
                     || !workspaceId
                     || cleanupRetention.isPending
-                  }
+                  )}
                   onClick={() => {
                     const keepLast =
                       data.schedule
