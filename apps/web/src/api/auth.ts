@@ -27,6 +27,30 @@ export type Workspace = {
   role: string
 }
 
+export type BootstrapRequest = {
+  email: string
+  password: string
+  display_name: string | null
+  organization_name: string
+  organization_slug: string
+  workspace_name: string
+}
+
+export function bootstrap(
+  payload: BootstrapRequest,
+) {
+  return apiJson<TokenResponse>(
+    '/api/v1/auth/bootstrap',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
 export function login(
   email: string,
   password: string,

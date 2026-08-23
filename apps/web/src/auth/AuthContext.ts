@@ -1,6 +1,7 @@
 import { createContext } from 'react'
 
 import type {
+  BootstrapRequest,
   CurrentUser,
   TokenResponse,
   Workspace,
@@ -17,6 +18,9 @@ export type AuthContextValue = {
   user: CurrentUser | null
   workspaces: Workspace[]
   workspace: Workspace | null
+  bootstrap: (
+    payload: BootstrapRequest,
+  ) => Promise<Workspace | null>
   login: (
     email: string,
     password: string,
