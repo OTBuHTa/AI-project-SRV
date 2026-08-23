@@ -407,6 +407,43 @@ export function Dashboard() {
         || plan.status === 'verification_failed',
     ).length
 
+  const executingActions =
+    actionPlans.filter(
+      (plan) =>
+        plan.status === 'executing',
+    ).length
+
+  const rejectedActions =
+    actionPlans.filter(
+      (plan) =>
+        plan.status === 'rejected',
+    ).length
+
+  const nonOnlineAgents =
+    Math.max(
+      agentList.length - onlineAgents,
+      0,
+    )
+
+  const notificationIssues =
+    notificationHealth.data
+      ?.issues.length
+    ?? 0
+
+  const notificationFailed =
+    notificationHealth.data
+      ?.total.failed
+    ?? 0
+
+  const notificationStale =
+    notificationHealth.data
+      ?.total.stale_sending
+    ?? 0
+
+  const backupFailedJobs =
+    backupData?.status.failed_jobs
+    ?? 0
+
   return (
     <>
       <header className="page-header">
@@ -429,6 +466,76 @@ export function Dashboard() {
           {serviceHealthy ? 'ONLINE' : 'DEGRADED'}
         </div>
       </header>
+
+      <section className="ops-stat-grid">
+        <article className="ops-stat">
+          <span>Agents online</span>
+
+          <strong>
+            {agents.isSuccess
+              ? `${onlineAgents} / ${agentList.length}`
+              : '—'}
+          </strong>
+
+          <small>
+            {agents.isSuccess
+              ? `${reportingAgents} reporting telemetry · ${nonOnlineAgents} non-online`
+              : 'Agent state unavailable'}
+          </small>
+        </article>
+
+        <article className="ops-stat">
+          <span>Pending approval</span>
+
+          <strong>
+            {actions.isSuccess
+              ? awaitingApproval
+              : '—'}
+          </strong>
+
+          <small>
+            {actions.isSuccess
+              ? `${queuedActions} queued · ${executingActions} executing · ${verifyingActions} verifying`
+              : 'Action lifecycle unavailable'}
+          </small>
+        </article>
+
+        <article className="ops-stat">
+          <span>Delivery issues</span>
+
+          <strong>
+            {notificationHealth.isSuccess
+              ? notificationIssues
+              : '—'}
+          </strong>
+
+          <small>
+            {notificationHealth.isSuccess
+              ? `${notificationFailed} failed · ${notificationStale} stale sending`
+              : 'Notification health unavailable'}
+          </small>
+        </article>
+
+        <article className="ops-stat">
+          <span>Backup failures</span>
+
+          <strong>
+            {backups.isSuccess
+              ? backupFailedJobs
+              : '—'}
+          </strong>
+
+          <small>
+            {backups.isSuccess
+              ? `Storage ${
+                  backupData?.storage.healthy
+                    ? 'healthy'
+                    : 'unhealthy'
+                }`
+              : 'Backup health unavailable'}
+          </small>
+        </article>
+      </section>
 
       <section className="status-grid">
         <StatusCard
@@ -852,6 +959,11 @@ export function Dashboard() {
                 </div>
 
                 <div className="readiness-row">
+                  <span>Executing</span>
+                  <strong>{executingActions}</strong>
+                </div>
+
+                <div className="readiness-row">
                   <span>Verifying</span>
                   <strong>{verifyingActions}</strong>
                 </div>
@@ -859,6 +971,11 @@ export function Dashboard() {
                 <div className="readiness-row">
                   <span>Failed</span>
                   <strong>{failedActions}</strong>
+                </div>
+
+                <div className="readiness-row">
+                  <span>Rejected</span>
+                  <strong>{rejectedActions}</strong>
                 </div>
 
                 {actionPlans
