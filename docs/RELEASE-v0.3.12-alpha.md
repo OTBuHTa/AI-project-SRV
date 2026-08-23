@@ -1,4 +1,4 @@
-# v0.3.12-alpha — Dashboard Operations Control Center
+# v0.3.12-alpha
 
 ## Summary
 
