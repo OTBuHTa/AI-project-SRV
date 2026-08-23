@@ -742,7 +742,7 @@ def command_deploy(
             json_mode,
         )
 
-    previous_revision = (
+    current_revision = (
         preflight["runtime"]
         ["health"]
         .get("build_revision")
@@ -751,6 +751,63 @@ def command_deploy(
     target_revision = (
         preflight["git"]["head"]
     )
+
+    existing_state = load_deploy_state()
+
+    previous_revision = current_revision
+
+    if (
+        current_revision == target_revision
+        and existing_state
+        and existing_state.get(
+            "target_revision"
+        ) == target_revision
+        and existing_state.get(
+            "previous_revision"
+        )
+        and existing_state.get(
+            "previous_revision"
+        ) != target_revision
+    ):
+        previous_revision = (
+            existing_state[
+                "previous_revision"
+            ]
+        )
+
+    if (
+        preflight["runtime"]["ok"]
+        and current_revision
+        == target_revision
+    ):
+        save_deploy_state(
+            {
+                "previous_revision":
+                    previous_revision,
+                "target_revision":
+                    target_revision,
+                "status":
+                    "verified",
+            }
+        )
+
+        return emit(
+            {
+                "ok": True,
+                "action": "deploy",
+                "executed": False,
+                "already_current": True,
+                "previous_revision":
+                    previous_revision,
+                "target_revision":
+                    target_revision,
+                "runtime":
+                    preflight["runtime"],
+                "rollback_required":
+                    False,
+            },
+            json_mode,
+        )
 
     save_deploy_state(
         {
@@ -763,19 +820,33 @@ def command_deploy(
         }
     )
 
-    result = run(
-        "docker",
-        "compose",
-        "up",
-        "-d",
-        "--build",
-        "--remove-orphans",
-        cwd=ROOT,
-        env={
-            "AI_SRV_BUILD_REVISION":
-                target_revision,
-        },
-    )
+    try:
+        result = run(
+            "docker",
+            "compose",
+            "up",
+            "-d",
+            "--build",
+            "--remove-orphans",
+            cwd=ROOT,
+            env={
+                "AI_SRV_BUILD_REVISION":
+                    target_revision,
+            },
+        )
+    except KeyboardInterrupt:
+        save_deploy_state(
+            {
+                "previous_revision":
+                    previous_revision,
+                "target_revision":
+                    target_revision,
+                "status":
+                    "interrupted",
+            }
+        )
+
+        raise
 
     if result.returncode != 0:
         save_deploy_state(
@@ -914,6 +985,14 @@ def command_rollback_plan(
         "target_revision_present":
             bool(target_revision),
 
+        "distinct_revisions":
+            (
+                bool(previous_revision)
+                and bool(target_revision)
+                and previous_revision
+                != target_revision
+            ),
+
         "previous_commit_available":
             commit_check.returncode == 0,
     }
@@ -1038,7 +1117,17 @@ def command_rollback(
             in {
                 "deploy-failed",
                 "verification-failed",
+                "interrupted",
             },
+
+        "distinct_revisions":
+            (
+                bool(previous_revision)
+                and previous_revision
+                != state.get(
+                    "target_revision"
+                )
+            ),
 
         "env_exists":
             (ROOT / ".env").exists(),
