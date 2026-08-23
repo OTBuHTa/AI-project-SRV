@@ -3,6 +3,29 @@ import {
   workspaceHeaders,
 } from './http'
 
+export type AgentStatusEvaluation = {
+  evaluated: number
+  changed: number
+  offline_after_seconds: number
+}
+
+export function evaluateAgentStatuses(
+  accessToken: string,
+  workspaceId: string,
+) {
+  return apiJson<AgentStatusEvaluation>(
+    '/api/v1/monitoring/evaluate-status',
+    {
+      method: 'POST',
+      headers: workspaceHeaders(
+        accessToken,
+        workspaceId,
+      ),
+    },
+  )
+}
+
+
 export type AgentTokenLifecycleDiagnostics = {
   status: string
   issues: string[]
