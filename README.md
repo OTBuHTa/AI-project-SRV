@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.3.12-alpha` — Dashboard Operations Control Center.
+`v0.3.13-alpha` — Backup Retention Cleanup Control.
 
 ## Architecture principles
 - AI Core runs on the workstation.
