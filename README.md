@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.3.16-alpha` — Platform Bootstrap Control.
+`v0.3.17-alpha` — Manual Action Plan Control.
 
 ## Architecture principles
 - AI Core runs on the workstation.

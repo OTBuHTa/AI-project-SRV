@@ -1,4 +1,9 @@
 import {
+  useState,
+  type FormEvent,
+} from 'react'
+
+import {
   Check,
   Clock3,
   ShieldCheck,
@@ -13,10 +18,15 @@ import {
 
 import {
   approveActionPlan,
+  createActionPlan,
   getActionPlans,
   rejectActionPlan,
   type ActionPlan,
 } from '../api/actions'
+import {
+  getAgents,
+} from '../api/agents'
+import { ApiError } from '../api/http'
 import { useAuth } from '../auth/useAuth'
 
 function formatDate(
@@ -59,6 +69,40 @@ function statusClass(
   return isSuccessful(status)
     ? 'status-badge status-badge--ok'
     : 'status-badge'
+}
+
+type DockerContainerOption = {
+  name: string
+  state: string
+}
+
+function dockerContainers(
+  value:
+    | Array<Record<string, unknown>>
+    | undefined,
+): DockerContainerOption[] {
+  if (!value) {
+    return []
+  }
+
+  return value.flatMap((item) => {
+    const name =
+      typeof item.name === 'string'
+        ? item.name
+        : null
+
+    if (!name) {
+      return []
+    }
+
+    return [{
+      name,
+      state:
+        typeof item.state === 'string'
+          ? item.state
+          : 'unknown',
+    }]
+  })
 }
 
 function JsonBlock({
@@ -327,12 +371,137 @@ function ActionCard({
 
 export function Actions() {
   const auth = useAuth()
+  const queryClient = useQueryClient()
 
   const token =
     auth.tokens?.access_token
 
   const workspaceId =
     auth.workspace?.id
+
+  const [
+    resourceId,
+    setResourceId,
+  ] = useState('')
+
+  const [
+    container,
+    setContainer,
+  ] = useState('')
+
+  const [
+    rationale,
+    setRationale,
+  ] = useState('')
+
+  const [
+    createError,
+    setCreateError,
+  ] = useState<string | null>(null)
+
+  const [
+    createdPlan,
+    setCreatedPlan,
+  ] = useState<ActionPlan | null>(null)
+
+  const agents = useQuery({
+    queryKey: [
+      'agents',
+      workspaceId,
+    ],
+    queryFn: () =>
+      getAgents(
+        token!,
+        workspaceId!,
+      ),
+    enabled: Boolean(
+      token && workspaceId,
+    ),
+    refetchInterval: 15_000,
+  })
+
+  const eligibleAgents =
+    (agents.data ?? []).filter(
+      (agent) =>
+        agent.capabilities.includes(
+          'docker.container.restart',
+        )
+        && agent.metrics?.docker
+          ?.available !== false
+        && dockerContainers(
+          agent.metrics?.docker?.containers,
+        ).length > 0,
+    )
+
+  const selectedAgent =
+    eligibleAgents.find(
+      (agent) =>
+        agent.resource_id === resourceId,
+    )
+
+  const containers =
+    dockerContainers(
+      selectedAgent?.metrics
+        ?.docker?.containers,
+    )
+
+  const create = useMutation({
+    mutationFn: () =>
+      createActionPlan(
+        token!,
+        workspaceId!,
+        {
+          resource_id: resourceId,
+          capability:
+            'docker.container.restart',
+          parameters: {
+            container,
+          },
+          rationale:
+            rationale.trim() || null,
+        },
+      ),
+    onMutate: () => {
+      setCreateError(null)
+      setCreatedPlan(null)
+    },
+    onSuccess: (plan) => {
+      setCreatedPlan(plan)
+      setContainer('')
+      setRationale('')
+
+      void queryClient.invalidateQueries({
+        queryKey: [
+          'action-plans',
+          workspaceId,
+        ],
+      })
+    },
+    onError: (error) => {
+      setCreateError(
+        error instanceof ApiError
+          ? error.detail
+          : 'action_plan_create_failed',
+      )
+    },
+  })
+
+  function submitActionPlan(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault()
+
+    if (
+      !token
+      || !workspaceId
+      || !resourceId
+      || !container
+    ) {
+      return
+    }
+
+    create.mutate()
+  }
 
   const plans = useQuery({
     queryKey: [
@@ -397,6 +566,180 @@ export function Actions() {
           LIVE QUEUE
         </div>
       </header>
+
+      <section className="panel ops-panel">
+        <div className="ops-title">
+          <ShieldCheck size={18} />
+
+          <div>
+            <strong>
+              Manual action plan
+            </strong>
+
+            <small>
+              Create a policy-controlled Docker
+              restart plan from the latest
+              observed agent inventory.
+            </small>
+          </div>
+        </div>
+
+        {agents.isLoading && (
+          <div className="placeholder">
+            Loading actionable resources…
+          </div>
+        )}
+
+        {agents.isError && (
+          <div className="auth-error">
+            Actionable resources are unavailable.
+          </div>
+        )}
+
+        {agents.isSuccess
+          && eligibleAgents.length === 0
+          && (
+            <div className="placeholder">
+              No resource currently exposes the
+              docker.container.restart capability
+              with observed Docker containers.
+            </div>
+          )}
+
+        {eligibleAgents.length > 0 && (
+          <form
+            className="action-form"
+            onSubmit={submitActionPlan}
+          >
+            <label className="field-label">
+              Resource
+            </label>
+
+            <select
+              className="control-select"
+              value={resourceId}
+              onChange={(event) => {
+                setResourceId(
+                  event.target.value,
+                )
+                setContainer('')
+                setCreatedPlan(null)
+                setCreateError(null)
+              }}
+              required
+            >
+              <option value="">
+                Select resource
+              </option>
+
+              {eligibleAgents.map((agent) => (
+                <option
+                  key={agent.id}
+                  value={agent.resource_id}
+                >
+                  {agent.hostname}
+                  {' · '}
+                  {agent.status}
+                </option>
+              ))}
+            </select>
+
+            <label className="field-label">
+              Capability
+            </label>
+
+            <input
+              value="docker.container.restart"
+              readOnly
+            />
+
+            <label className="field-label">
+              Container
+            </label>
+
+            <select
+              className="control-select"
+              value={container}
+              onChange={(event) => {
+                setContainer(
+                  event.target.value,
+                )
+                setCreatedPlan(null)
+                setCreateError(null)
+              }}
+              disabled={!resourceId}
+              required
+            >
+              <option value="">
+                Select container
+              </option>
+
+              {containers.map((item) => (
+                <option
+                  key={item.name}
+                  value={item.name}
+                >
+                  {item.name}
+                  {' · '}
+                  {item.state}
+                </option>
+              ))}
+            </select>
+
+            <label className="field-label">
+              Rationale
+            </label>
+
+            <textarea
+              value={rationale}
+              onChange={(event) =>
+                setRationale(
+                  event.target.value,
+                )
+              }
+              placeholder="Optional operator rationale..."
+              maxLength={2000}
+              rows={4}
+            />
+
+            <div className="placeholder">
+              Creating this plan does not execute
+              the restart. The backend creates it
+              as pending_approval and the existing
+              approval flow remains required.
+            </div>
+
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={
+                create.isPending
+                || !resourceId
+                || !container
+              }
+            >
+              <ShieldCheck size={17} />
+              {create.isPending
+                ? 'Creating plan…'
+                : 'Create action plan'}
+            </button>
+          </form>
+        )}
+
+        {createError && (
+          <div className="auth-error">
+            {createError}
+          </div>
+        )}
+
+        {createdPlan && (
+          <div className="ops-success">
+            Action plan {createdPlan.id}
+            {' created with status '}
+            {createdPlan.status}.
+          </div>
+        )}
+      </section>
 
       <section className="ops-stat-grid">
         <article className="ops-stat">
