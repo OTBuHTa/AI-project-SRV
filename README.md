@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.3.21-alpha` — Permission-aware realtime WebSocket authorization.
+`v0.3.22-alpha` — Operational automation layer with srvctl safe autopilot, guarded deploy and rollback lifecycle.
 
 ## Architecture principles
 - AI Core runs on the workstation.
