@@ -17,6 +17,7 @@ import {
 } from '@tanstack/react-query'
 
 import {
+  createEnrollmentToken,
   getAgents,
   type Agent,
   revokeAgent,
@@ -251,6 +252,16 @@ export function Agents() {
 
 
   const [
+    enrollmentCredential,
+    setEnrollmentCredential,
+  ] = useState<{
+    name: string
+    agentType: string
+    enrollmentToken: string
+    expiresAt: string
+  } | null>(null)
+
+  const [
     rotatedCredential,
     setRotatedCredential,
   ] = useState<{
@@ -322,6 +333,31 @@ export function Agents() {
     ),
     refetchInterval: 15_000,
   })
+
+  const createEnrollment =
+    useMutation({
+      mutationFn: (payload: {
+        name: string
+        agent_type: string
+        ttl_minutes: number
+      }) =>
+        createEnrollmentToken(
+          token!,
+          workspaceId!,
+          payload,
+        ),
+      onMutate: () => {
+        setEnrollmentCredential(null)
+      },
+      onSuccess: (result, payload) => {
+        setEnrollmentCredential({
+          name: payload.name,
+          agentType: payload.agent_type,
+          enrollmentToken: result.token,
+          expiresAt: result.expires_at,
+        })
+      },
+    })
 
   const rotateToken = useMutation({
     mutationFn: (agent: Agent) =>
@@ -405,6 +441,209 @@ export function Agents() {
           WS {realtime.toUpperCase()}
         </div>
       </header>
+
+      <section className="panel ops-panel">
+        <div className="ops-title">
+          <ShieldCheck size={18} />
+          <div>
+            <strong>
+              Agent enrollment
+            </strong>
+            <small>
+              Create a one-time enrollment token
+              for a new infrastructure agent.
+            </small>
+          </div>
+        </div>
+
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+
+            const form =
+              new FormData(
+                event.currentTarget,
+              )
+
+            const name =
+              String(
+                form.get('name') ?? '',
+              ).trim()
+
+            const agentType =
+              String(
+                form.get('agent_type')
+                  ?? '',
+              ).trim()
+
+            const ttlMinutes =
+              Number(
+                form.get('ttl_minutes'),
+              )
+
+            if (
+              name.length < 1
+              || name.length > 160
+              || !/^[a-z0-9_-]{2,32}$/.test(
+                agentType,
+              )
+              || !Number.isInteger(
+                ttlMinutes,
+              )
+              || ttlMinutes < 5
+              || ttlMinutes > 1440
+            ) {
+              return
+            }
+
+            createEnrollment.mutate({
+              name,
+              agent_type: agentType,
+              ttl_minutes: ttlMinutes,
+            })
+          }}
+        >
+          <div className="notification-filter-grid">
+            <label className="field-label">
+              Name
+
+              <input
+                className="control-input"
+                type="text"
+                name="name"
+                minLength={1}
+                maxLength={160}
+                placeholder="srv-agent-01"
+                required
+              />
+            </label>
+
+            <label className="field-label">
+              Agent type
+
+              <input
+                className="control-input"
+                type="text"
+                name="agent_type"
+                defaultValue="linux"
+                minLength={2}
+                maxLength={32}
+                pattern="[a-z0-9_-]{2,32}"
+                required
+              />
+            </label>
+
+            <label className="field-label">
+              TTL minutes
+
+              <input
+                className="control-input"
+                type="number"
+                name="ttl_minutes"
+                min={5}
+                max={1440}
+                step={1}
+                defaultValue={30}
+                required
+              />
+            </label>
+          </div>
+
+          <div className="notification-filter-actions">
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={
+                !token
+                || !workspaceId
+                || createEnrollment.isPending
+              }
+            >
+              {createEnrollment.isPending
+                ? 'Creating…'
+                : 'Create enrollment token'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {createEnrollment.isError && (
+        <div className="auth-error">
+          Enrollment token creation failed.
+        </div>
+      )}
+
+      {enrollmentCredential && (
+        <section className="panel ops-panel">
+          <div className="ops-title">
+            <ShieldCheck size={18} />
+
+            <div>
+              <strong>
+                Enrollment token
+              </strong>
+
+              <small>
+                {enrollmentCredential.name}
+                {' · '}
+                {enrollmentCredential.agentType}
+                {' · shown only in this page state'}
+              </small>
+            </div>
+          </div>
+
+          <div className="ops-details">
+            <div>
+              <span>Name</span>
+              <strong>
+                {enrollmentCredential.name}
+              </strong>
+            </div>
+
+            <div>
+              <span>Agent type</span>
+              <strong>
+                {enrollmentCredential.agentType}
+              </strong>
+            </div>
+
+            <div>
+              <span>Expires</span>
+              <strong>
+                {lastSeen(
+                  enrollmentCredential.expiresAt,
+                )}
+              </strong>
+            </div>
+          </div>
+
+          <div className="ops-empty">
+            Save this enrollment token before
+            dismissing it. The token is returned
+            only when it is created and can enroll
+            one agent before expiration.
+          </div>
+
+          <code>
+            {
+              enrollmentCredential
+                .enrollmentToken
+            }
+          </code>
+
+          <div className="notification-filter-actions">
+            <button
+              type="button"
+              className="sidebar-action"
+              onClick={() =>
+                setEnrollmentCredential(null)
+              }
+            >
+              Dismiss token
+            </button>
+          </div>
+        </section>
+      )}
 
       {lifecycle.isError && (
         <div className="auth-error">

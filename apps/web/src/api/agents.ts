@@ -134,6 +134,39 @@ export function revokeAgent(
   )
 }
 
+export type EnrollmentTokenCreate = {
+  name: string
+  agent_type: string
+  ttl_minutes: number
+}
+
+export type EnrollmentTokenResponse = {
+  token: string
+  expires_at: string
+}
+
+export function createEnrollmentToken(
+  accessToken: string,
+  workspaceId: string,
+  payload: EnrollmentTokenCreate,
+) {
+  return apiJson<EnrollmentTokenResponse>(
+    '/api/v1/agents/enrollment-token',
+    {
+      method: 'POST',
+      headers: {
+        ...workspaceHeaders(
+          accessToken,
+          workspaceId,
+        ),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
+
 export function getAgents(
   accessToken: string,
   workspaceId: string,

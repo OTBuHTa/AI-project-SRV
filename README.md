@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.3.13-alpha` — Backup Retention Cleanup Control.
+`v0.3.14-alpha` — Agent Enrollment Token Control.
 
 ## Architecture principles
 - AI Core runs on the workstation.
