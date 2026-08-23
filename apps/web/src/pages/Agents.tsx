@@ -24,6 +24,7 @@ import {
   rotateAgentToken,
 } from '../api/agents'
 import {
+  evaluateAgentStatuses,
   getActiveAgentLifecycleAlerts,
   getAgentLifecycleAlerts,
   getAgentTokenLifecycleDiagnostics,
@@ -252,6 +253,15 @@ export function Agents() {
 
 
   const [
+    statusEvaluation,
+    setStatusEvaluation,
+  ] = useState<{
+    evaluated: number
+    changed: number
+    offlineAfterSeconds: number
+  } | null>(null)
+
+  const [
     enrollmentCredential,
     setEnrollmentCredential,
   ] = useState<{
@@ -333,6 +343,28 @@ export function Agents() {
     ),
     refetchInterval: 15_000,
   })
+
+  const evaluateStatuses =
+    useMutation({
+      mutationFn: () =>
+        evaluateAgentStatuses(
+          token!,
+          workspaceId!,
+        ),
+      onMutate: () => {
+        setStatusEvaluation(null)
+      },
+      onSuccess: (result) => {
+        setStatusEvaluation({
+          evaluated: result.evaluated,
+          changed: result.changed,
+          offlineAfterSeconds:
+            result.offline_after_seconds,
+        })
+
+        void agents.refetch()
+      },
+    })
 
   const createEnrollment =
     useMutation({
@@ -441,6 +473,89 @@ export function Agents() {
           WS {realtime.toUpperCase()}
         </div>
       </header>
+
+      <section className="panel ops-panel">
+        <div className="ops-title">
+          <Activity size={18} />
+          <div>
+            <strong>
+              Agent status evaluation
+            </strong>
+            <small>
+              Reconcile linked resource status
+              from current agent heartbeat state.
+            </small>
+          </div>
+        </div>
+
+        <div className="ops-details">
+          <div>
+            <span>Offline threshold</span>
+            <strong>
+              {statusEvaluation
+                ? (
+                    `${statusEvaluation
+                      .offlineAfterSeconds}s`
+                  )
+                : '90s'}
+            </strong>
+          </div>
+
+          <div>
+            <span>Last evaluated</span>
+            <strong>
+              {statusEvaluation
+                ? statusEvaluation.evaluated
+                : '—'}
+            </strong>
+          </div>
+
+          <div>
+            <span>Resources changed</span>
+            <strong>
+              {statusEvaluation
+                ? statusEvaluation.changed
+                : '—'}
+            </strong>
+          </div>
+        </div>
+
+        <div className="notification-filter-actions">
+          <button
+            type="button"
+            className="primary-button"
+            disabled={
+              !token
+              || !workspaceId
+              || evaluateStatuses.isPending
+            }
+            onClick={() =>
+              evaluateStatuses.mutate()
+            }
+          >
+            {evaluateStatuses.isPending
+              ? 'Evaluating…'
+              : 'Evaluate agent status'}
+          </button>
+        </div>
+      </section>
+
+      {evaluateStatuses.isError && (
+        <div className="auth-error">
+          Agent status evaluation failed.
+        </div>
+      )}
+
+      {statusEvaluation && (
+        <div className="ops-success">
+          Evaluated {statusEvaluation.evaluated}
+          {' agent(s); updated '}
+          {statusEvaluation.changed}
+          {' linked resource(s). Offline threshold: '}
+          {statusEvaluation.offlineAfterSeconds}
+          {' seconds.'}
+        </div>
+      )}
 
       <section className="panel ops-panel">
         <div className="ops-title">
