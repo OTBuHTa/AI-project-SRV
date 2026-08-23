@@ -24,7 +24,15 @@ def run(
     *cmd: str,
     check: bool = False,
     cwd: Path | None = None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    import os
+
+    process_env = os.environ.copy()
+
+    if env:
+        process_env.update(env)
+
     return subprocess.run(
         cmd,
         cwd=cwd or ROOT,
@@ -32,6 +40,7 @@ def run(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=check,
+        env=process_env,
     )
 
 
@@ -762,6 +771,10 @@ def command_deploy(
         "--build",
         "--remove-orphans",
         cwd=ROOT,
+        env={
+            "AI_SRV_BUILD_REVISION":
+                target_revision,
+        },
     )
 
     if result.returncode != 0:
@@ -929,6 +942,415 @@ def command_rollback_plan(
         json_mode,
     )
 
+
+def compose_project_name() -> str | None:
+    result = run(
+        "docker",
+        "compose",
+        "ps",
+        "-q",
+        "api",
+    )
+
+    if result.returncode != 0:
+        return None
+
+    container_id = result.stdout.strip()
+
+    if not container_id:
+        return None
+
+    inspect = run(
+        "docker",
+        "inspect",
+        "-f",
+        '{{ index .Config.Labels "com.docker.compose.project" }}',
+        container_id,
+    )
+
+    if inspect.returncode != 0:
+        return None
+
+    value = inspect.stdout.strip()
+
+    return value or None
+
+
+def find_compose_file(
+    root: Path,
+) -> Path | None:
+    for name in (
+        "compose.yaml",
+        "compose.yml",
+        "docker-compose.yaml",
+        "docker-compose.yml",
+    ):
+        candidate = root / name
+
+        if candidate.exists():
+            return candidate
+
+    return None
+
+
+def command_rollback(
+    json_mode: bool,
+) -> int:
+    import shutil
+    import tempfile
+    import time
+
+    state = load_deploy_state()
+    git = git_status()
+
+    if state is None:
+        return emit(
+            {
+                "ok": False,
+                "action": "rollback",
+                "executed": False,
+                "blockers": [
+                    "deploy-state-missing",
+                ],
+            },
+            json_mode,
+        )
+
+    previous_revision = (
+        state.get("previous_revision")
+    )
+
+    checks = {
+        "main_branch":
+            git["branch"] == "main",
+
+        "clean_tree":
+            not git["dirty"],
+
+        "head_matches_origin_main":
+            git["head"] == git["origin_main"],
+
+        "previous_revision_present":
+            bool(previous_revision),
+
+        "rollback_required":
+            state.get("status")
+            in {
+                "deploy-failed",
+                "verification-failed",
+            },
+
+        "env_exists":
+            (ROOT / ".env").exists(),
+    }
+
+    commit_check = None
+
+    if previous_revision:
+        commit_check = run(
+            "git",
+            "cat-file",
+            "-e",
+            f"{previous_revision}^{{commit}}",
+        )
+
+    checks["previous_commit_available"] = (
+        commit_check is not None
+        and commit_check.returncode == 0
+    )
+
+    project_name = compose_project_name()
+
+    checks["compose_project"] = (
+        project_name is not None
+    )
+
+    blockers = [
+        name
+        for name, passed
+        in checks.items()
+        if not passed
+    ]
+
+    if blockers:
+        return emit(
+            {
+                "ok": False,
+                "action": "rollback",
+                "executed": False,
+                "checks": checks,
+                "blockers": blockers,
+            },
+            json_mode,
+        )
+
+    tmp_root = Path(
+        tempfile.mkdtemp(
+            prefix="ai-srv-rollback-",
+        )
+    )
+
+    worktree = tmp_root / "repo"
+
+    add_worktree = run(
+        "git",
+        "worktree",
+        "add",
+        "--detach",
+        str(worktree),
+        previous_revision,
+    )
+
+    if add_worktree.returncode != 0:
+        shutil.rmtree(
+            tmp_root,
+            ignore_errors=True,
+        )
+
+        return emit(
+            {
+                "ok": False,
+                "action": "rollback",
+                "executed": False,
+                "phase": "worktree",
+                "result":
+                    compact_process(add_worktree),
+            },
+            json_mode,
+        )
+
+    verified = False
+    runtime = {}
+    rollback_result = None
+
+    try:
+        compose_file = find_compose_file(
+            worktree
+        )
+
+        if compose_file is None:
+            save_deploy_state(
+                {
+                    **state,
+                    "status":
+                        "rollback-compose-missing",
+                }
+            )
+
+            return emit(
+                {
+                    "ok": False,
+                    "action": "rollback",
+                    "executed": False,
+                    "blockers": [
+                        "compose-file-missing",
+                    ],
+                },
+                json_mode,
+            )
+
+        rollback_result = run(
+            "docker",
+            "compose",
+            "-p",
+            project_name,
+            "--env-file",
+            str(ROOT / ".env"),
+            "-f",
+            str(compose_file),
+            "up",
+            "-d",
+            "--build",
+            "--remove-orphans",
+            cwd=worktree,
+            env={
+                "AI_SRV_BUILD_REVISION":
+                    previous_revision,
+                "AI_SRV_ENV_FILE":
+                    str(ROOT / ".env"),
+            },
+        )
+
+        if rollback_result.returncode == 0:
+            for _ in range(30):
+                time.sleep(2)
+
+                runtime = runtime_snapshot()
+
+                revision = (
+                    runtime["health"]
+                    .get("build_revision")
+                )
+
+                if (
+                    runtime["ok"]
+                    and revision
+                    == previous_revision
+                ):
+                    verified = True
+                    break
+
+        save_deploy_state(
+            {
+                **state,
+                "status":
+                    (
+                        "rollback-verified"
+                        if verified
+                        else "rollback-failed"
+                    ),
+                "rollback_revision":
+                    previous_revision,
+            }
+        )
+
+    finally:
+        run(
+            "git",
+            "worktree",
+            "remove",
+            "--force",
+            str(worktree),
+        )
+
+        shutil.rmtree(
+            tmp_root,
+            ignore_errors=True,
+        )
+
+    return emit(
+        {
+            "ok": verified,
+            "action": "rollback",
+            "executed": True,
+            "revision":
+                previous_revision,
+            "compose":
+                (
+                    None
+                    if rollback_result is None
+                    else
+                    compact_process(
+                        rollback_result
+                    )
+                ),
+            "runtime":
+                runtime,
+        },
+        json_mode,
+    )
+
+
+def command_release_gate(
+    json_mode: bool,
+) -> int:
+    git = git_status()
+    ci = ci_snapshot()
+
+    merge_base = run(
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "origin/main",
+        "HEAD",
+    )
+
+    changed_result = run(
+        "git",
+        "diff",
+        "--name-only",
+        "origin/main...HEAD",
+    )
+
+    changed = {
+        line.strip()
+        for line in
+        changed_result.stdout.splitlines()
+        if line.strip()
+    }
+
+    allowed = {
+        "README.md",
+        "tools/srvctl",
+        "apps/api/app/version.py",
+        "apps/api/pyproject.toml",
+        "docs/RELEASE-v0.3.22-alpha.md",
+    }
+
+    version_file = (
+        ROOT
+        / "apps/api/app/version.py"
+    ).read_text(
+        encoding="utf-8"
+    )
+
+    pyproject = (
+        ROOT
+        / "apps/api/pyproject.toml"
+    ).read_text(
+        encoding="utf-8"
+    )
+
+    checks = {
+        "release_branch":
+            git["branch"]
+            == "agent/v0.3.22-alpha",
+
+        "clean_tree":
+            not git["dirty"],
+
+        "base_is_origin_main":
+            merge_base.returncode == 0,
+
+        "ci":
+            ci["ok"],
+
+        "expected_files_only":
+            (
+                bool(changed)
+                and changed <= allowed
+            ),
+
+        "srvctl_changed":
+            "tools/srvctl" in changed,
+
+        "api_version":
+            'API_VERSION = "0.3.22-alpha"'
+            in version_file,
+
+        "package_version":
+            'version = "0.3.22a0"'
+            in pyproject,
+
+        "release_notes":
+            (
+                ROOT
+                / "docs/RELEASE-v0.3.22-alpha.md"
+            ).exists(),
+    }
+
+    blockers = [
+        name
+        for name, passed
+        in checks.items()
+        if not passed
+    ]
+
+    return emit(
+        {
+            "ok": all(checks.values()),
+            "gate": "release",
+            "release":
+                "v0.3.22-alpha",
+            "checks": checks,
+            "changed_files":
+                sorted(changed),
+            "blockers":
+                blockers,
+        },
+        json_mode,
+    )
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="srvctl",
@@ -957,6 +1379,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("deploy")
     sub.add_parser("deploy-state")
     sub.add_parser("rollback-plan")
+    sub.add_parser("rollback")
+    sub.add_parser("release-gate")
 
     return parser
 
@@ -977,6 +1401,8 @@ def main() -> int:
         "deploy": command_deploy,
         "deploy-state": command_deploy_state,
         "rollback-plan": command_rollback_plan,
+        "rollback": command_rollback,
+        "release-gate": command_release_gate,
     }
 
     return handlers[args.command](args.json)
