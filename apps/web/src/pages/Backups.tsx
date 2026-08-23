@@ -15,6 +15,7 @@ import {
 
 import {
   acknowledgeBackupAlert,
+  cleanupBackups,
   createBackup,
   getActiveBackupAlertEvents,
   getBackupAlertEvents,
@@ -26,6 +27,7 @@ import {
   getBackupStatus,
   getBackupStorageHealth,
   updateBackupSchedule,
+  type BackupCleanupRequest,
   type BackupScheduleUpdate,
 } from '../api/backups'
 import { useAuth } from '../auth/useAuth'
@@ -129,6 +131,25 @@ export function Backups() {
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: ['backups'],
+      })
+    },
+  })
+
+  const cleanupRetention = useMutation({
+    mutationFn: (
+      payload: BackupCleanupRequest,
+    ) =>
+      cleanupBackups(
+        token!,
+        workspaceId!,
+        payload,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: [
+          'backups',
+          workspaceId,
+        ],
       })
     },
   })
@@ -823,6 +844,83 @@ export function Backups() {
             <div className="ops-empty">
               No backup schedule configured.
             </div>
+          )}
+
+          {data?.schedule && (
+            <>
+              <div className="action-controls">
+                <button
+                  type="button"
+                  className="danger-button"
+                  disabled={
+                    !token
+                    || !workspaceId
+                    || cleanupRetention.isPending
+                  }
+                  onClick={() => {
+                    const keepLast =
+                      data.schedule
+                        ?.retention_keep_last
+
+                    const maxAgeDays =
+                      data.schedule
+                        ?.retention_max_age_days
+
+                    if (
+                      keepLast === undefined
+                      || maxAgeDays === undefined
+                    ) {
+                      return
+                    }
+
+                    const confirmed =
+                      window.confirm(
+                        `Run backup retention cleanup? `
+                        + `Keep last ${keepLast} backups `
+                        + `and remove eligible artifacts `
+                        + `older than ${maxAgeDays} days.`,
+                      )
+
+                    if (!confirmed) {
+                      return
+                    }
+
+                    cleanupRetention.mutate({
+                      keep_last: keepLast,
+                      max_age_days: maxAgeDays,
+                    })
+                  }}
+                >
+                  <Archive size={16} />
+
+                  {cleanupRetention.isPending
+                    ? 'Cleaning…'
+                    : 'Run retention cleanup'}
+                </button>
+              </div>
+
+              {cleanupRetention.isError && (
+                <div className="ops-empty">
+                  Backup retention cleanup failed.
+                </div>
+              )}
+
+              {cleanupRetention.isSuccess && (
+                <div className="ops-success">
+                  Cleanup complete: {' '}
+                  {
+                    cleanupRetention
+                      .data.deleted_files
+                  }
+                  {' files and '}
+                  {
+                    cleanupRetention
+                      .data.deleted_records
+                  }
+                  {' records deleted.'}
+                </div>
+              )}
+            </>
           )}
         </article>
 
