@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.api.deps import require_permission
+from app.core.permissions import has_permission
 from app.core.security import decode_access_token
 from app.db.session import SessionLocal, get_db
 from app.models.core import AgentLifecycleAlertEvent, Membership
@@ -148,6 +149,16 @@ async def workspace_ws(
         )
 
         if not membership:
+            await _close_websocket(
+                websocket,
+                code=4403,
+            )
+            return
+
+        if not has_permission(
+            membership.role,
+            "resource.read",
+        ):
             await _close_websocket(
                 websocket,
                 code=4403,
