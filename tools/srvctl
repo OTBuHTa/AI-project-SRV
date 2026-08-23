@@ -585,6 +585,350 @@ def command_production_gate(
         json_mode,
     )
 
+
+STATE_DIR = ROOT / ".git" / "srvctl"
+DEPLOY_STATE = STATE_DIR / "deploy-state.json"
+
+
+def save_deploy_state(payload: dict) -> None:
+    STATE_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    DEPLOY_STATE.write_text(
+        json.dumps(
+            payload,
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def load_deploy_state() -> dict | None:
+    if not DEPLOY_STATE.exists():
+        return None
+
+    try:
+        return json.loads(
+            DEPLOY_STATE.read_text(
+                encoding="utf-8",
+            )
+        )
+    except json.JSONDecodeError:
+        return None
+
+
+def deploy_preflight() -> dict:
+    git = git_status()
+    runtime = runtime_snapshot()
+
+    env_file = ROOT / ".env"
+
+    env_mode = None
+
+    if env_file.exists():
+        env_mode = oct(
+            env_file.stat().st_mode & 0o777
+        )[2:]
+
+    checks = {
+        "main_branch":
+            git["branch"] == "main",
+
+        "clean_tree":
+            not git["dirty"],
+
+        "head_matches_origin_main":
+            git["head"] == git["origin_main"],
+
+        "env_exists":
+            env_file.exists(),
+
+        "env_mode_600":
+            env_mode == "600",
+
+        "runtime_before_deploy":
+            runtime["ok"],
+    }
+
+    return {
+        "ok": all(checks.values()),
+        "checks": checks,
+        "git": git,
+        "runtime": runtime,
+        "env_mode": env_mode,
+    }
+
+
+def command_deploy_plan(
+    json_mode: bool,
+) -> int:
+    preflight = deploy_preflight()
+
+    current_revision = (
+        preflight["runtime"]
+        ["health"]
+        .get("build_revision")
+    )
+
+    target_revision = (
+        preflight["git"]["head"]
+    )
+
+    blockers = [
+        name
+        for name, passed
+        in preflight["checks"].items()
+        if not passed
+    ]
+
+    payload = {
+        "ok": preflight["ok"],
+        "action": "deploy-plan",
+        "current_revision":
+            current_revision,
+        "target_revision":
+            target_revision,
+        "branch":
+            preflight["git"]["branch"],
+        "checks":
+            preflight["checks"],
+        "blockers":
+            blockers,
+        "would_run":
+            (
+                "docker compose up -d "
+                "--build --remove-orphans"
+            ),
+    }
+
+    return emit(
+        payload,
+        json_mode,
+    )
+
+
+def command_deploy(
+    json_mode: bool,
+) -> int:
+    preflight = deploy_preflight()
+
+    if not preflight["ok"]:
+        blockers = [
+            name
+            for name, passed
+            in preflight["checks"].items()
+            if not passed
+        ]
+
+        return emit(
+            {
+                "ok": False,
+                "action": "deploy",
+                "executed": False,
+                "blockers": blockers,
+            },
+            json_mode,
+        )
+
+    previous_revision = (
+        preflight["runtime"]
+        ["health"]
+        .get("build_revision")
+    )
+
+    target_revision = (
+        preflight["git"]["head"]
+    )
+
+    save_deploy_state(
+        {
+            "previous_revision":
+                previous_revision,
+            "target_revision":
+                target_revision,
+            "status":
+                "deploying",
+        }
+    )
+
+    result = run(
+        "docker",
+        "compose",
+        "up",
+        "-d",
+        "--build",
+        "--remove-orphans",
+        cwd=ROOT,
+    )
+
+    if result.returncode != 0:
+        save_deploy_state(
+            {
+                "previous_revision":
+                    previous_revision,
+                "target_revision":
+                    target_revision,
+                "status":
+                    "deploy-failed",
+                "error":
+                    compact_process(result),
+            }
+        )
+
+        return emit(
+            {
+                "ok": False,
+                "action": "deploy",
+                "executed": True,
+                "phase": "compose-up",
+                "result":
+                    compact_process(result),
+            },
+            json_mode,
+        )
+
+    import time
+
+    verified = False
+    runtime = {}
+
+    for _ in range(30):
+        time.sleep(2)
+
+        runtime = runtime_snapshot()
+
+        revision = (
+            runtime["health"]
+            .get("build_revision")
+        )
+
+        if (
+            runtime["ok"]
+            and revision
+            == target_revision
+        ):
+            verified = True
+            break
+
+    save_deploy_state(
+        {
+            "previous_revision":
+                previous_revision,
+            "target_revision":
+                target_revision,
+            "status":
+                (
+                    "verified"
+                    if verified
+                    else "verification-failed"
+                ),
+        }
+    )
+
+    return emit(
+        {
+            "ok": verified,
+            "action": "deploy",
+            "executed": True,
+            "previous_revision":
+                previous_revision,
+            "target_revision":
+                target_revision,
+            "runtime":
+                runtime,
+            "rollback_required":
+                not verified,
+        },
+        json_mode,
+    )
+
+
+def command_deploy_state(
+    json_mode: bool,
+) -> int:
+    state = load_deploy_state()
+
+    return emit(
+        {
+            "ok": state is not None,
+            "action": "deploy-state",
+            "state": state,
+        },
+        json_mode,
+    )
+
+
+def command_rollback_plan(
+    json_mode: bool,
+) -> int:
+    state = load_deploy_state()
+
+    if state is None:
+        return emit(
+            {
+                "ok": False,
+                "action":
+                    "rollback-plan",
+                "blockers": [
+                    "deploy-state-missing",
+                ],
+            },
+            json_mode,
+        )
+
+    previous_revision = (
+        state.get("previous_revision")
+    )
+
+    target_revision = (
+        state.get("target_revision")
+    )
+
+    commit_check = run(
+        "git",
+        "cat-file",
+        "-e",
+        f"{previous_revision}^{{commit}}",
+    )
+
+    checks = {
+        "previous_revision_present":
+            bool(previous_revision),
+
+        "target_revision_present":
+            bool(target_revision),
+
+        "previous_commit_available":
+            commit_check.returncode == 0,
+    }
+
+    blockers = [
+        name
+        for name, passed
+        in checks.items()
+        if not passed
+    ]
+
+    return emit(
+        {
+            "ok": all(checks.values()),
+            "action": "rollback-plan",
+            "from_revision":
+                target_revision,
+            "to_revision":
+                previous_revision,
+            "checks":
+                checks,
+            "blockers":
+                blockers,
+            "executed": False,
+        },
+        json_mode,
+    )
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="srvctl",
@@ -609,6 +953,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("ci")
     sub.add_parser("production-gate")
     sub.add_parser("autopilot")
+    sub.add_parser("deploy-plan")
+    sub.add_parser("deploy")
+    sub.add_parser("deploy-state")
+    sub.add_parser("rollback-plan")
 
     return parser
 
@@ -625,6 +973,10 @@ def main() -> int:
         "ci": command_ci,
         "production-gate": command_production_gate,
         "autopilot": command_autopilot,
+        "deploy-plan": command_deploy_plan,
+        "deploy": command_deploy,
+        "deploy-state": command_deploy_state,
+        "rollback-plan": command_rollback_plan,
     }
 
     return handlers[args.command](args.json)
