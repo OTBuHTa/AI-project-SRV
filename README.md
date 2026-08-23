@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.3.14-alpha` — Agent Enrollment Token Control.
+`v0.3.15-alpha` — Agent Status Evaluation Control.
 
 ## Architecture principles
 - AI Core runs on the workstation.
