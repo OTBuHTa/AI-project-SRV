@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_SERVICES = {
+    "postgres",
+    "redis",
+    "api",
+    "web",
+    "agent-lifecycle-alert-delivery",
+    "backup-alert-delivery",
+    "backup-scheduler",
+}
+
+
+def run(
+    *cmd: str,
+    check: bool = False,
+    cwd: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        cmd,
+        cwd=cwd or ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=check,
+    )
+
+
+def emit(payload: dict, json_mode: bool) -> int:
+    if json_mode:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        for key, value in payload.items():
+            if isinstance(value, (dict, list)):
+                print(f"{key}={json.dumps(value, ensure_ascii=False)}")
+            else:
+                print(f"{key}={value}")
+
+    return 0 if payload.get("ok") is True else 1
+
+
+def git_status() -> dict:
+    branch = run("git", "branch", "--show-current").stdout.strip()
+    head = run("git", "rev-parse", "HEAD").stdout.strip()
+    origin_main = run("git", "rev-parse", "origin/main").stdout.strip()
+    dirty = run("git", "status", "--porcelain").stdout.splitlines()
+
+    return {
+        "branch": branch,
+        "head": head,
+        "origin_main": origin_main,
+        "dirty": dirty,
+    }
+
+
+def compose_services() -> list[str]:
+    result = run(
+        "docker",
+        "compose",
+        "ps",
+        "--services",
+        "--status",
+        "running",
+    )
+
+    if result.returncode != 0:
+        return []
+
+    return sorted(
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.strip()
+    )
+
+
+def health() -> dict:
+    health_result = run(
+        "curl",
+        "-fsS",
+        "http://127.0.0.1:8000/health",
+    )
+
+    ready_result = run(
+        "curl",
+        "-fsS",
+        "http://127.0.0.1:8000/ready",
+    )
+
+    web_result = run(
+        "curl",
+        "-sS",
+        "-o",
+        "/dev/null",
+        "-w",
+        "%{http_code}",
+        "http://127.0.0.1:8080/",
+    )
+
+    def decode(result: subprocess.CompletedProcess[str]) -> dict | None:
+        if result.returncode != 0:
+            return None
+
+        try:
+            return json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return None
+
+    return {
+        "health": decode(health_result),
+        "ready": decode(ready_result),
+        "web_http": web_result.stdout.strip(),
+    }
+
+
+def command_status(json_mode: bool) -> int:
+    git = git_status()
+    services = compose_services()
+    runtime = health()
+
+    payload = {
+        "ok": (
+            not git["dirty"]
+            and set(services) == EXPECTED_SERVICES
+            and runtime["health"] is not None
+            and runtime["ready"] is not None
+            and runtime["web_http"] == "200"
+        ),
+        "git": git,
+        "services": services,
+        "runtime": runtime,
+    }
+
+    return emit(payload, json_mode)
+
+
+def command_doctor(json_mode: bool) -> int:
+    checks = {}
+
+    for binary in (
+        "git",
+        "docker",
+        "curl",
+        "python3",
+    ):
+        result = run(
+            "bash",
+            "-lc",
+            f"command -v {binary}",
+        )
+
+        checks[binary] = result.returncode == 0
+
+    compose = run(
+        "docker",
+        "compose",
+        "version",
+    )
+
+    checks["docker_compose"] = compose.returncode == 0
+    checks["env_exists"] = (ROOT / ".env").exists()
+
+    payload = {
+        "ok": all(checks.values()),
+        "checks": checks,
+    }
+
+    return emit(payload, json_mode)
+
+
+def command_test(json_mode: bool) -> int:
+    api_root = ROOT / "apps/api"
+    pytest = ROOT / ".venv/bin/pytest"
+
+    targeted = run(
+        str(pytest),
+        "-q",
+        "tests/test_monitoring_websocket_auth.py",
+        cwd=api_root,
+    )
+
+    full = None
+
+    if targeted.returncode == 0:
+        full = run(
+            str(pytest),
+            "-q",
+            cwd=api_root,
+        )
+
+    payload = {
+        "ok": (
+            targeted.returncode == 0
+            and full is not None
+            and full.returncode == 0
+        ),
+        "targeted": {
+            "rc": targeted.returncode,
+            "stdout": targeted.stdout.strip(),
+            "stderr": targeted.stderr.strip(),
+        },
+        "full_api": None if full is None else {
+            "rc": full.returncode,
+            "stdout": full.stdout.strip(),
+            "stderr": full.stderr.strip(),
+        },
+    }
+
+    return emit(payload, json_mode)
+
+
+def command_verify(json_mode: bool) -> int:
+    git = git_status()
+    runtime = health()
+    services = compose_services()
+
+    health_data = runtime["health"] or {}
+    ready_data = runtime["ready"] or {}
+
+    payload = {
+        "ok": (
+            not git["dirty"]
+            and set(services) == EXPECTED_SERVICES
+            and health_data.get("status") == "ok"
+            and ready_data.get("status") == "ready"
+            and ready_data.get("checks", {}).get("database") is True
+            and ready_data.get("checks", {}).get("redis") is True
+            and runtime["web_http"] == "200"
+        ),
+        "git": git,
+        "services": services,
+        "health": health_data,
+        "ready": ready_data,
+        "web_http": runtime["web_http"],
+    }
+
+    return emit(payload, json_mode)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="srvctl",
+        description="AI-project SRV operational control CLI",
+    )
+
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="machine-readable output",
+    )
+
+    sub = parser.add_subparsers(
+        dest="command",
+        required=True,
+    )
+
+    sub.add_parser("doctor")
+    sub.add_parser("status")
+    sub.add_parser("test")
+    sub.add_parser("verify")
+
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    handlers = {
+        "doctor": command_doctor,
+        "status": command_status,
+        "test": command_test,
+        "verify": command_verify,
+    }
+
+    return handlers[args.command](args.json)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
