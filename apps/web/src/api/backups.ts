@@ -269,6 +269,38 @@ export function acknowledgeBackupAlert(
   )
 }
 
+export type BackupCleanupRequest = {
+  keep_last: number
+  max_age_days: number
+}
+
+export type BackupCleanupResult = {
+  deleted_files: number
+  deleted_records: number
+}
+
+export function cleanupBackups(
+  accessToken: string,
+  workspaceId: string,
+  payload: BackupCleanupRequest,
+) {
+  return apiJson<BackupCleanupResult>(
+    '/api/v1/backups/cleanup',
+    {
+      method: 'POST',
+      headers: {
+        ...workspaceHeaders(
+          accessToken,
+          workspaceId,
+        ),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
+
 export function createBackup(
   accessToken: string,
   workspaceId: string,
