@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.3.20-alpha` — Permission-aware data surfaces and realtime gating.
+`v0.3.21-alpha` — Permission-aware realtime WebSocket authorization.
 
 ## Architecture principles
 - AI Core runs on the workstation.
