@@ -65,6 +65,36 @@ export function createActionProposal(
   )
 }
 
+export type ActionPlanCreate = {
+  resource_id: string
+  capability: 'docker.container.restart'
+  parameters: {
+    container: string
+  }
+  rationale: string | null
+}
+
+export function createActionPlan(
+  accessToken: string,
+  workspaceId: string,
+  payload: ActionPlanCreate,
+) {
+  return apiJson<ActionPlan>(
+    '/api/v1/action-plans',
+    {
+      method: 'POST',
+      headers: {
+        ...workspaceHeaders(
+          accessToken,
+          workspaceId,
+        ),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
 export function getActionPlans(
   accessToken: string,
   workspaceId: string,
