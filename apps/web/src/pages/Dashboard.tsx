@@ -165,7 +165,9 @@ export function Dashboard() {
     )
 
   const realtimeStatus =
-    useWorkspaceTelemetry()
+    useWorkspaceTelemetry(
+      canReadAgents,
+    )
 
   const agents = useQuery({
     queryKey: [
@@ -505,75 +507,85 @@ export function Dashboard() {
         </div>
       </header>
 
-      <section className="ops-stat-grid">
-        <article className="ops-stat">
-          <span>Agents online</span>
+      {(canReadAgents || canReadActions || canReadWorkspace) && (
+        <section className="ops-stat-grid">
+          {canReadAgents && (
+            <article className="ops-stat">
+              <span>Agents online</span>
 
-          <strong>
-            {agents.isSuccess
-              ? `${onlineAgents} / ${agentList.length}`
-              : '—'}
-          </strong>
+              <strong>
+                {agents.isSuccess
+                  ? `${onlineAgents} / ${agentList.length}`
+                  : '—'}
+              </strong>
 
-          <small>
-            {agents.isSuccess
-              ? `${reportingAgents} reporting telemetry · ${nonOnlineAgents} non-online`
-              : 'Agent state unavailable'}
-          </small>
-        </article>
+              <small>
+                {agents.isSuccess
+                  ? `${reportingAgents} reporting telemetry · ${nonOnlineAgents} non-online`
+                  : 'Agent state unavailable'}
+              </small>
+            </article>
+          )}
 
-        <article className="ops-stat">
-          <span>Pending approval</span>
+          {canReadActions && (
+            <article className="ops-stat">
+              <span>Pending approval</span>
 
-          <strong>
-            {actions.isSuccess
-              ? awaitingApproval
-              : '—'}
-          </strong>
+              <strong>
+                {actions.isSuccess
+                  ? awaitingApproval
+                  : '—'}
+              </strong>
 
-          <small>
-            {actions.isSuccess
-              ? `${queuedActions} queued · ${executingActions} executing · ${verifyingActions} verifying`
-              : 'Action lifecycle unavailable'}
-          </small>
-        </article>
+              <small>
+                {actions.isSuccess
+                  ? `${queuedActions} queued · ${executingActions} executing · ${verifyingActions} verifying`
+                  : 'Action lifecycle unavailable'}
+              </small>
+            </article>
+          )}
 
-        <article className="ops-stat">
-          <span>Delivery issues</span>
+          {canReadWorkspace && (
+            <article className="ops-stat">
+              <span>Delivery issues</span>
 
-          <strong>
-            {notificationHealth.isSuccess
-              ? notificationIssues
-              : '—'}
-          </strong>
+              <strong>
+                {notificationHealth.isSuccess
+                  ? notificationIssues
+                  : '—'}
+              </strong>
 
-          <small>
-            {notificationHealth.isSuccess
-              ? `${notificationFailed} failed · ${notificationStale} stale sending`
-              : 'Notification health unavailable'}
-          </small>
-        </article>
+              <small>
+                {notificationHealth.isSuccess
+                  ? `${notificationFailed} failed · ${notificationStale} stale sending`
+                  : 'Notification health unavailable'}
+              </small>
+            </article>
+          )}
 
-        <article className="ops-stat">
-          <span>Backup failures</span>
+          {canReadWorkspace && (
+            <article className="ops-stat">
+              <span>Backup failures</span>
 
-          <strong>
-            {backups.isSuccess
-              ? backupFailedJobs
-              : '—'}
-          </strong>
+              <strong>
+                {backups.isSuccess
+                  ? backupFailedJobs
+                  : '—'}
+              </strong>
 
-          <small>
-            {backups.isSuccess
-              ? `Storage ${
-                  backupData?.storage.healthy
-                    ? 'healthy'
-                    : 'unhealthy'
-                }`
-              : 'Backup health unavailable'}
-          </small>
-        </article>
-      </section>
+              <small>
+                {backups.isSuccess
+                  ? `Storage ${
+                      backupData?.storage.healthy
+                        ? 'healthy'
+                        : 'unhealthy'
+                    }`
+                  : 'Backup health unavailable'}
+              </small>
+            </article>
+          )}
+        </section>
+      )}
 
       <section className="status-grid">
         <StatusCard
@@ -606,77 +618,85 @@ export function Dashboard() {
           healthy={redisHealthy}
         />
 
-        <StatusCard
-          title="Agents"
-          value={
-            agents.isLoading
-              ? 'Loading'
-              : agents.isError
-                ? 'Unavailable'
-                : `${onlineAgents} / ${agentList.length} online`
-          }
-          healthy={agentsHealthy}
-          detail={
-            agents.isSuccess
-              ? `${reportingAgents} reporting telemetry`
-              : undefined
-          }
-        />
+        {canReadAgents && (
+          <StatusCard
+            title="Agents"
+            value={
+              agents.isLoading
+                ? 'Loading'
+                : agents.isError
+                  ? 'Unavailable'
+                  : `${onlineAgents} / ${agentList.length} online`
+            }
+            healthy={agentsHealthy}
+            detail={
+              agents.isSuccess
+                ? `${reportingAgents} reporting telemetry`
+                : undefined
+            }
+          />
+        )}
 
-        <StatusCard
-          title="Realtime"
-          value={
-            realtimeStatus === 'connected'
-              ? 'Connected'
-              : realtimeStatus
-          }
-          healthy={
-            realtimeStatus === 'connected'
-          }
-          detail="Workspace telemetry"
-        />
+        {canReadAgents && (
+          <StatusCard
+            title="Realtime"
+            value={
+              realtimeStatus === 'connected'
+                ? 'Connected'
+                : realtimeStatus
+            }
+            healthy={
+              realtimeStatus === 'connected'
+            }
+            detail="Workspace telemetry"
+          />
+        )}
 
-        <StatusCard
-          title="Backups"
-          value={
-            backups.isLoading
-              ? 'Loading'
-              : backups.isError
-                ? 'Unavailable'
-                : backupHealthy
-                  ? 'Healthy'
-                  : 'Degraded'
-          }
-          healthy={backupHealthy}
-          detail={
-            backupData
-              ? `${backupData.status.failed_jobs} failed jobs · storage ${
-                  backupData.storage.healthy
-                    ? 'healthy'
-                    : 'unhealthy'
-                }`
-              : undefined
-          }
-        />
+        {canReadWorkspace && (
+          <StatusCard
+            title="Backups"
+            value={
+              backups.isLoading
+                ? 'Loading'
+                : backups.isError
+                  ? 'Unavailable'
+                  : backupHealthy
+                    ? 'Healthy'
+                    : 'Degraded'
+            }
+            healthy={backupHealthy}
+            detail={
+              backupData
+                ? `${backupData.status.failed_jobs} failed jobs · storage ${
+                    backupData.storage.healthy
+                      ? 'healthy'
+                      : 'unhealthy'
+                  }`
+                : undefined
+            }
+          />
+        )}
 
-        <StatusCard
-          title="Notifications"
-          value={
-            notificationHealth.isLoading
-              ? 'Loading'
-              : notificationHealth.isError
-                ? 'Unavailable'
-                : notificationHealthy
-                  ? 'Healthy'
-                  : 'Degraded'
-          }
-          healthy={notificationHealthy}
-          detail={
-            notificationCounts
-              ? `${notificationCounts.failed} failed · ${notificationCounts.pending} pending`
-              : undefined
-          }
-        />
+        {canReadWorkspace && (
+          <StatusCard
+            title="Notifications"
+            value={
+              notificationHealth.isLoading
+                ? 'Loading'
+                : notificationHealth.isError
+                  ? 'Unavailable'
+                  : notificationHealthy
+                    ? 'Healthy'
+                    : 'Degraded'
+            }
+            healthy={notificationHealthy}
+            detail={
+              notificationCounts
+                ? `${notificationCounts.failed} failed · ${notificationCounts.pending} pending`
+                : undefined
+            }
+          />
+        )}
       </section>
 
       <section className="panel-grid">
@@ -713,375 +733,387 @@ export function Dashboard() {
           </dl>
         </article>
 
-        <article className="panel">
-          <div className="panel__title">
-            <Cpu size={20} />
-            <h2>Infrastructure</h2>
-          </div>
-
-          <div className="readiness-row">
-            <span>CPU average</span>
-            <strong>
-              {percentLabel(averageCpu)}
-            </strong>
-          </div>
-
-          <div className="readiness-row">
-            <span>Memory average</span>
-            <strong>
-              {percentLabel(
-                averageMemory,
-              )}
-            </strong>
-          </div>
-
-          <div className="readiness-row">
-            <span>Disk average</span>
-            <strong>
-              {percentLabel(averageDisk)}
-            </strong>
-          </div>
-
-          <div className="readiness-row">
-            <span>Docker containers</span>
-            <strong>
-              {dockerObserved
-                ? `${dockerRunning} / ${dockerTotal}`
-                : '—'}
-            </strong>
-          </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel__title">
-            <Bot size={20} />
-            <h2>Agents</h2>
-          </div>
-
-          {agents.isLoading && (
-            <div className="placeholder">
-              Loading agents…
+        {canReadAgents && (
+          <article className="panel">
+            <div className="panel__title">
+              <Cpu size={20} />
+              <h2>Infrastructure</h2>
             </div>
-          )}
 
-          {agents.isError && (
-            <div className="placeholder">
-              Agent status unavailable.
+            <div className="readiness-row">
+              <span>CPU average</span>
+              <strong>
+                {percentLabel(averageCpu)}
+              </strong>
             </div>
-          )}
 
-          {agents.isSuccess
-            && agentList.length === 0
-            && (
+            <div className="readiness-row">
+              <span>Memory average</span>
+              <strong>
+                {percentLabel(
+                  averageMemory,
+                )}
+              </strong>
+            </div>
+
+            <div className="readiness-row">
+              <span>Disk average</span>
+              <strong>
+                {percentLabel(averageDisk)}
+              </strong>
+            </div>
+
+            <div className="readiness-row">
+              <span>Docker containers</span>
+              <strong>
+                {dockerObserved
+                  ? `${dockerRunning} / ${dockerTotal}`
+                  : '—'}
+              </strong>
+            </div>
+          </article>
+        )}
+
+        {canReadAgents && (
+          <article className="panel">
+            <div className="panel__title">
+              <Bot size={20} />
+              <h2>Agents</h2>
+            </div>
+
+            {agents.isLoading && (
               <div className="placeholder">
-                No enrolled agents.
+                Loading agents…
               </div>
             )}
 
-          {agents.isSuccess
-            && agentList.length > 0
-            && (
+            {agents.isError && (
+              <div className="placeholder">
+                Agent status unavailable.
+              </div>
+            )}
+
+            {agents.isSuccess
+              && agentList.length === 0
+              && (
+                <div className="placeholder">
+                  No enrolled agents.
+                </div>
+              )}
+
+            {agents.isSuccess
+              && agentList.length > 0
+              && (
+                <>
+                  <div className="readiness-row">
+                    <span>Online</span>
+                    <strong>
+                      {onlineAgents}
+                      {' / '}
+                      {agentList.length}
+                    </strong>
+                  </div>
+
+                  <div className="readiness-row">
+                    <span>Telemetry</span>
+                    <strong>
+                      {reportingAgents}
+                      {' / '}
+                      {agentList.length}
+                    </strong>
+                  </div>
+
+                  <div className="readiness-row">
+                    <span>Realtime</span>
+                    <strong>
+                      {realtimeStatus.toUpperCase()}
+                    </strong>
+                  </div>
+
+                  {agentList
+                    .slice(0, 4)
+                    .map((agent) => (
+                      <div
+                        className="readiness-row"
+                        key={agent.id}
+                      >
+                        <span>
+                          {agent.hostname}
+                        </span>
+                        <strong>
+                          {agent.status.toUpperCase()}
+                        </strong>
+                      </div>
+                    ))}
+                </>
+              )}
+          </article>
+        )}
+
+        {canReadWorkspace && (
+          <article className="panel">
+            <div className="panel__title">
+              <Archive size={20} />
+              <h2>Backup protection</h2>
+            </div>
+
+            {backups.isLoading && (
+              <div className="placeholder">
+                Loading backup health…
+              </div>
+            )}
+
+            {backups.isError && (
+              <div className="placeholder">
+                Backup health unavailable.
+              </div>
+            )}
+
+            {backupData && (
               <>
                 <div className="readiness-row">
-                  <span>Online</span>
+                  <span>Status</span>
                   <strong>
-                    {onlineAgents}
-                    {' / '}
-                    {agentList.length}
+                    {backupData.status.status.toUpperCase()}
                   </strong>
                 </div>
 
                 <div className="readiness-row">
-                  <span>Telemetry</span>
+                  <span>Storage</span>
                   <strong>
-                    {reportingAgents}
-                    {' / '}
-                    {agentList.length}
+                    {backupData.storage.healthy
+                      ? 'HEALTHY'
+                      : 'UNHEALTHY'}
                   </strong>
                 </div>
 
                 <div className="readiness-row">
-                  <span>Realtime</span>
+                  <span>Failed jobs</span>
                   <strong>
-                    {realtimeStatus.toUpperCase()}
+                    {backupData.status.failed_jobs}
                   </strong>
                 </div>
 
-                {agentList
-                  .slice(0, 4)
-                  .map((agent) => (
-                    <div
-                      className="readiness-row"
-                      key={agent.id}
-                    >
-                      <span>
-                        {agent.hostname}
-                      </span>
-                      <strong>
-                        {agent.status.toUpperCase()}
-                      </strong>
-                    </div>
-                  ))}
+                <div className="readiness-row">
+                  <span>Last verified</span>
+                  <strong>
+                    {formatDate(
+                      backupData.health
+                        .last_verified_at,
+                    )}
+                  </strong>
+                </div>
+
+                <div className="readiness-row">
+                  <span>Schedule</span>
+                  <strong>
+                    {backupData.schedule
+                      ? backupData.schedule.enabled
+                        ? 'ENABLED'
+                        : 'DISABLED'
+                      : 'NOT CONFIGURED'}
+                  </strong>
+                </div>
               </>
             )}
-        </article>
+          </article>
+        )}
 
-        <article className="panel">
-          <div className="panel__title">
-            <Archive size={20} />
-            <h2>Backup protection</h2>
-          </div>
-
-          {backups.isLoading && (
-            <div className="placeholder">
-              Loading backup health…
+        {canReadWorkspace && (
+          <article className="panel">
+            <div className="panel__title">
+              <Bell size={20} />
+              <h2>Notification delivery</h2>
             </div>
-          )}
 
-          {backups.isError && (
-            <div className="placeholder">
-              Backup health unavailable.
-            </div>
-          )}
-
-          {backupData && (
-            <>
-              <div className="readiness-row">
-                <span>Status</span>
-                <strong>
-                  {backupData.status.status.toUpperCase()}
-                </strong>
-              </div>
-
-              <div className="readiness-row">
-                <span>Storage</span>
-                <strong>
-                  {backupData.storage.healthy
-                    ? 'HEALTHY'
-                    : 'UNHEALTHY'}
-                </strong>
-              </div>
-
-              <div className="readiness-row">
-                <span>Failed jobs</span>
-                <strong>
-                  {backupData.status.failed_jobs}
-                </strong>
-              </div>
-
-              <div className="readiness-row">
-                <span>Last verified</span>
-                <strong>
-                  {formatDate(
-                    backupData.health
-                      .last_verified_at,
-                  )}
-                </strong>
-              </div>
-
-              <div className="readiness-row">
-                <span>Schedule</span>
-                <strong>
-                  {backupData.schedule
-                    ? backupData.schedule.enabled
-                      ? 'ENABLED'
-                      : 'DISABLED'
-                    : 'NOT CONFIGURED'}
-                </strong>
-              </div>
-            </>
-          )}
-        </article>
-
-        <article className="panel">
-          <div className="panel__title">
-            <Bell size={20} />
-            <h2>Notification delivery</h2>
-          </div>
-
-          {notificationHealth.isLoading && (
-            <div className="placeholder">
-              Loading delivery health…
-            </div>
-          )}
-
-          {notificationHealth.isError && (
-            <div className="placeholder">
-              Delivery health unavailable.
-            </div>
-          )}
-
-          {notificationHealth.data && (
-            <>
-              <div className="readiness-row">
-                <span>Status</span>
-                <strong>
-                  {notificationHealth.data.status
-                    .toUpperCase()}
-                </strong>
-              </div>
-
-              <div className="readiness-row">
-                <span>Failed</span>
-                <strong>
-                  {notificationHealth.data
-                    .total.failed}
-                </strong>
-              </div>
-
-              <div className="readiness-row">
-                <span>Retryable</span>
-                <strong>
-                  {notificationHealth.data
-                    .total.retryable_failed}
-                </strong>
-              </div>
-
-              <div className="readiness-row">
-                <span>Stale sending</span>
-                <strong>
-                  {notificationHealth.data
-                    .total.stale_sending}
-                </strong>
-              </div>
-
-              <div className="readiness-row">
-                <span>Issues</span>
-                <strong>
-                  {notificationHealth.data
-                    .issues.length}
-                </strong>
-              </div>
-            </>
-          )}
-        </article>
-
-        <article className="panel">
-          <div className="panel__title">
-            <ShieldCheck size={20} />
-            <h2>Action queue</h2>
-          </div>
-
-          {actions.isLoading && (
-            <div className="placeholder">
-              Loading action plans…
-            </div>
-          )}
-
-          {actions.isError && (
-            <div className="placeholder">
-              Action queue unavailable.
-            </div>
-          )}
-
-          {actions.isSuccess
-            && actionPlans.length === 0
-            && (
+            {notificationHealth.isLoading && (
               <div className="placeholder">
-                No action plans.
+                Loading delivery health…
               </div>
             )}
 
-          {actions.isSuccess
-            && actionPlans.length > 0
-            && (
+            {notificationHealth.isError && (
+              <div className="placeholder">
+                Delivery health unavailable.
+              </div>
+            )}
+
+            {notificationHealth.data && (
               <>
                 <div className="readiness-row">
-                  <span>Awaiting approval</span>
-                  <strong>{awaitingApproval}</strong>
-                </div>
-
-                <div className="readiness-row">
-                  <span>Queued</span>
-                  <strong>{queuedActions}</strong>
-                </div>
-
-                <div className="readiness-row">
-                  <span>Executing</span>
-                  <strong>{executingActions}</strong>
-                </div>
-
-                <div className="readiness-row">
-                  <span>Verifying</span>
-                  <strong>{verifyingActions}</strong>
+                  <span>Status</span>
+                  <strong>
+                    {notificationHealth.data.status
+                      .toUpperCase()}
+                  </strong>
                 </div>
 
                 <div className="readiness-row">
                   <span>Failed</span>
-                  <strong>{failedActions}</strong>
+                  <strong>
+                    {notificationHealth.data
+                      .total.failed}
+                  </strong>
                 </div>
 
                 <div className="readiness-row">
-                  <span>Rejected</span>
-                  <strong>{rejectedActions}</strong>
+                  <span>Retryable</span>
+                  <strong>
+                    {notificationHealth.data
+                      .total.retryable_failed}
+                  </strong>
                 </div>
 
-                {actionPlans
-                  .slice(0, 4)
-                  .map((plan) => (
-                    <div
-                      className="readiness-row"
-                      key={plan.id}
-                    >
-                      <span>{plan.capability}</span>
-                      <strong>
-                        {plan.status.toUpperCase()}
-                      </strong>
-                    </div>
-                  ))}
+                <div className="readiness-row">
+                  <span>Stale sending</span>
+                  <strong>
+                    {notificationHealth.data
+                      .total.stale_sending}
+                  </strong>
+                </div>
 
                 <div className="readiness-row">
-                  <span>Policy queue</span>
-                  <Link to="/actions">
-                    Open actions
-                  </Link>
+                  <span>Issues</span>
+                  <strong>
+                    {notificationHealth.data
+                      .issues.length}
+                  </strong>
                 </div>
               </>
             )}
-        </article>
+          </article>
+        )}
 
-        <article className="panel">
-          <div className="panel__title">
-            <ClipboardList size={20} />
-            <h2>Recent audit</h2>
-          </div>
-
-          {audit.isLoading && (
-            <div className="placeholder">
-              Loading audit events…
+        {canReadActions && (
+          <article className="panel">
+            <div className="panel__title">
+              <ShieldCheck size={20} />
+              <h2>Action queue</h2>
             </div>
-          )}
 
-          {audit.isError && (
-            <div className="placeholder">
-              Audit history unavailable.
-            </div>
-          )}
-
-          {audit.isSuccess
-            && auditEvents.length === 0
-            && (
+            {actions.isLoading && (
               <div className="placeholder">
-                No audit events.
+                Loading action plans…
               </div>
             )}
 
-          {auditEvents.map((event) => (
-            <div
-              className="readiness-row"
-              key={event.id}
-            >
-              <span>
-                {event.action}
-              </span>
-              <strong>
-                {formatDate(
-                  event.created_at,
-                )}
-              </strong>
+            {actions.isError && (
+              <div className="placeholder">
+                Action queue unavailable.
+              </div>
+            )}
+
+            {actions.isSuccess
+              && actionPlans.length === 0
+              && (
+                <div className="placeholder">
+                  No action plans.
+                </div>
+              )}
+
+            {actions.isSuccess
+              && actionPlans.length > 0
+              && (
+                <>
+                  <div className="readiness-row">
+                    <span>Awaiting approval</span>
+                    <strong>{awaitingApproval}</strong>
+                  </div>
+
+                  <div className="readiness-row">
+                    <span>Queued</span>
+                    <strong>{queuedActions}</strong>
+                  </div>
+
+                  <div className="readiness-row">
+                    <span>Executing</span>
+                    <strong>{executingActions}</strong>
+                  </div>
+
+                  <div className="readiness-row">
+                    <span>Verifying</span>
+                    <strong>{verifyingActions}</strong>
+                  </div>
+
+                  <div className="readiness-row">
+                    <span>Failed</span>
+                    <strong>{failedActions}</strong>
+                  </div>
+
+                  <div className="readiness-row">
+                    <span>Rejected</span>
+                    <strong>{rejectedActions}</strong>
+                  </div>
+
+                  {actionPlans
+                    .slice(0, 4)
+                    .map((plan) => (
+                      <div
+                        className="readiness-row"
+                        key={plan.id}
+                      >
+                        <span>{plan.capability}</span>
+                        <strong>
+                          {plan.status.toUpperCase()}
+                        </strong>
+                      </div>
+                    ))}
+
+                  <div className="readiness-row">
+                    <span>Policy queue</span>
+                    <Link to="/actions">
+                      Open actions
+                    </Link>
+                  </div>
+                </>
+              )}
+          </article>
+        )}
+
+        {canReadAudit && (
+          <article className="panel">
+            <div className="panel__title">
+              <ClipboardList size={20} />
+              <h2>Recent audit</h2>
             </div>
-          ))}
-        </article>
+
+            {audit.isLoading && (
+              <div className="placeholder">
+                Loading audit events…
+              </div>
+            )}
+
+            {audit.isError && (
+              <div className="placeholder">
+                Audit history unavailable.
+              </div>
+            )}
+
+            {audit.isSuccess
+              && auditEvents.length === 0
+              && (
+                <div className="placeholder">
+                  No audit events.
+                </div>
+              )}
+
+            {auditEvents.map((event) => (
+              <div
+                className="readiness-row"
+                key={event.id}
+              >
+                <span>
+                  {event.action}
+                </span>
+                <strong>
+                  {formatDate(
+                    event.created_at,
+                  )}
+                </strong>
+              </div>
+            ))}
+          </article>
+        )}
 
         <article className="panel">
           <div className="panel__title">

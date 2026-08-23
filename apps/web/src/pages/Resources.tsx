@@ -23,6 +23,7 @@ import {
   type Agent,
   type InventoryLifecycleStatus,
 } from '../api/agents'
+import { hasPermission } from '../auth/permissions'
 import { useAuth } from '../auth/useAuth'
 
 function ResourceCard({
@@ -513,6 +514,18 @@ export function Resources() {
   const workspaceId =
     auth.workspace?.id
 
+  const canReadAgents =
+    hasPermission(
+      auth.workspace?.role,
+      'agent.read',
+    )
+
+  const canReadResources =
+    hasPermission(
+      auth.workspace?.role,
+      'resource.read',
+    )
+
   const agents = useQuery({
     queryKey: [
       'agents',
@@ -524,7 +537,10 @@ export function Resources() {
         workspaceId!,
       ),
     enabled: Boolean(
-      token && workspaceId,
+      token
+      && workspaceId
+      && canReadAgents
+      && canReadResources,
     ),
     refetchInterval: 15_000,
   })

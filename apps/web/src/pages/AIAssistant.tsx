@@ -178,10 +178,12 @@ export function AIAssistant() {
     useState(false)
 
   const selectedAgent =
-    agents.data?.find(
-      (agent) =>
-        agent.resource_id === resourceId,
-    )
+    canReadAgents
+      ? agents.data?.find(
+          (agent) =>
+            agent.resource_id === resourceId,
+        )
+      : undefined
 
   const containers = dockerContainers(
     selectedAgent?.metrics
@@ -320,7 +322,9 @@ export function AIAssistant() {
         token,
         workspaceId,
         cleanMessage,
-        resourceId || undefined,
+        canReadAgents && resourceId
+          ? resourceId
+          : undefined,
         conversationId,
       )
 
@@ -431,6 +435,7 @@ export function AIAssistant() {
             <select
               className="control-select"
               value={resourceId}
+              disabled={!canReadAgents}
               onChange={(event) =>
                 selectResource(
                   event.target.value,
@@ -441,7 +446,8 @@ export function AIAssistant() {
                 No resource context
               </option>
 
-              {agents.data?.map((agent) => (
+              {canReadAgents
+                && agents.data?.map((agent) => (
                 <option
                   key={agent.resource_id}
                   value={agent.resource_id}
@@ -452,6 +458,15 @@ export function AIAssistant() {
                 </option>
               ))}
             </select>
+
+            {!canReadAgents && (
+              <div className="placeholder">
+                Resource context requires
+                agent.read. Chat remains
+                available without resource
+                context.
+              </div>
+            )}
           </article>
 
           <article className="panel chat-panel">
@@ -463,9 +478,9 @@ export function AIAssistant() {
                     Infrastructure AI
                   </strong>
                   <span>
-                    Select a resource and ask
-                    about health, telemetry or
-                    Docker state.
+                    {canReadAgents
+                      ? 'Select a resource and ask about health, telemetry or Docker state.'
+                      : 'Ask about the workspace without resource context.'}
                   </span>
                 </div>
               )}
