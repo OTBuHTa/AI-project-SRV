@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.3.11-alpha` — Audit Control Center.
+`v0.3.12-alpha` — Dashboard Operations Control Center.
 
 ## Architecture principles
 - AI Core runs on the workstation.
