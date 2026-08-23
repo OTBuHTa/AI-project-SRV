@@ -7,8 +7,10 @@ import {
 import {
   getCurrentUser,
   getWorkspaces,
+  bootstrap as bootstrapRequest,
   login as loginRequest,
   refreshSession,
+  type BootstrapRequest,
   type CurrentUser,
   type TokenResponse,
   type Workspace,
@@ -135,6 +137,46 @@ export function AuthProvider({
     }
   }, [])
 
+  async function bootstrap(
+    payload: BootstrapRequest,
+  ): Promise<Workspace | null> {
+    const initialTokens =
+      await bootstrapRequest(payload)
+
+    setTokens(initialTokens)
+
+    const [
+      currentUser,
+      availableWorkspaces,
+    ] = await Promise.all([
+      getCurrentUser(
+        initialTokens.access_token,
+      ),
+      getWorkspaces(
+        initialTokens.access_token,
+      ),
+    ])
+
+    const activeWorkspace =
+      availableWorkspaces.length === 1
+        ? availableWorkspaces[0]
+        : null
+
+    if (activeWorkspace) {
+      setStoredWorkspace(activeWorkspace)
+    } else {
+      clearStoredWorkspace()
+    }
+
+    setTokensState(initialTokens)
+    setUser(currentUser)
+    setWorkspaces(availableWorkspaces)
+    setWorkspace(activeWorkspace)
+    setStatus('authenticated')
+
+    return activeWorkspace
+  }
+
   async function login(
     email: string,
     password: string,
@@ -222,6 +264,7 @@ export function AuthProvider({
         user,
         workspaces,
         workspace,
+        bootstrap,
         login,
         selectWorkspace,
         logout,
