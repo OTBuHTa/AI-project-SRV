@@ -89,6 +89,12 @@ export function AIAssistant() {
       'action.create',
     )
 
+  const canReadAgents =
+    hasPermission(
+      auth.workspace?.role,
+      'agent.read',
+    )
+
   const queryClient = useQueryClient()
 
   const agents = useQuery({
@@ -102,7 +108,9 @@ export function AIAssistant() {
         workspaceId!,
       ),
     enabled: Boolean(
-      token && workspaceId,
+      token
+      && workspaceId
+      && canReadAgents,
     ),
     refetchInterval: 15_000,
   })

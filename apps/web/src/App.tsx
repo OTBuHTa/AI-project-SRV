@@ -22,6 +22,7 @@ import {
   loginPath,
   workspaceSelectPath,
 } from './auth/redirect'
+import { hasPermission } from './auth/permissions'
 import { useAuth } from './auth/useAuth'
 import { Actions } from './pages/Actions'
 import { Agents } from './pages/Agents'
@@ -36,15 +37,25 @@ import { Resources } from './pages/Resources'
 import { WorkspaceSelect } from './pages/WorkspaceSelect'
 
 const nav = [
-  ['/', 'Dashboard', LayoutDashboard],
-  ['/infrastructure', 'Infrastructure', Activity],
-  ['/resources', 'Resources', Boxes],
-  ['/agents', 'Agents', Bot],
-  ['/ai', 'AI Assistant', BrainCircuit],
-  ['/actions', 'Actions', ShieldCheck],
-  ['/notifications', 'Notifications', Bell],
-  ['/backups', 'Backups', Archive],
-  ['/audit', 'Audit', ClipboardList],
+  ['/', 'Dashboard', LayoutDashboard, []],
+  [
+    '/infrastructure',
+    'Infrastructure',
+    Activity,
+    ['agent.read', 'network.read'],
+  ],
+  ['/resources', 'Resources', Boxes, ['resource.read']],
+  ['/agents', 'Agents', Bot, ['agent.read']],
+  ['/ai', 'AI Assistant', BrainCircuit, ['resource.read']],
+  ['/actions', 'Actions', ShieldCheck, ['action.read']],
+  [
+    '/notifications',
+    'Notifications',
+    Bell,
+    ['workspace.read'],
+  ],
+  ['/backups', 'Backups', Archive, ['workspace.read']],
+  ['/audit', 'Audit', ClipboardList, ['audit.read']],
 ] as const
 
 function LoadingScreen() {
@@ -92,8 +103,24 @@ function ProtectedShell() {
     )
   }
 
+  const canAccess = (
+    permissions: readonly string[],
+  ) =>
+    permissions.every((permission) =>
+      hasPermission(
+        auth.workspace?.role,
+        permission,
+      ),
+    )
+
+  const visibleNav =
+    nav.filter(
+      ([, , , permissions]) =>
+        canAccess(permissions),
+    )
+
   const currentNav =
-    nav.find(([path]) =>
+    visibleNav.find(([path]) =>
       path === '/'
         ? location.pathname === '/'
         : location.pathname.startsWith(path),
@@ -127,7 +154,7 @@ function ProtectedShell() {
         </div>
 
         <nav>
-          {nav.map(
+          {visibleNav.map(
             ([path, label, Icon]) => (
               <NavLink
                 key={path}
@@ -202,35 +229,70 @@ function ProtectedShell() {
           />
           <Route
             path="/infrastructure"
-            element={<Infrastructure />}
+            element={
+              canAccess([
+                'agent.read',
+                'network.read',
+              ])
+                ? <Infrastructure />
+                : <Navigate to="/" replace />
+            }
           />
           <Route
             path="/resources"
-            element={<Resources />}
+            element={
+              canAccess(['resource.read'])
+                ? <Resources />
+                : <Navigate to="/" replace />
+            }
           />
           <Route
             path="/agents"
-            element={<Agents />}
+            element={
+              canAccess(['agent.read'])
+                ? <Agents />
+                : <Navigate to="/" replace />
+            }
           />
           <Route
             path="/ai"
-            element={<AIAssistant />}
+            element={
+              canAccess(['resource.read'])
+                ? <AIAssistant />
+                : <Navigate to="/" replace />
+            }
           />
           <Route
             path="/actions"
-            element={<Actions />}
+            element={
+              canAccess(['action.read'])
+                ? <Actions />
+                : <Navigate to="/" replace />
+            }
           />
           <Route
             path="/notifications"
-            element={<Notifications />}
+            element={
+              canAccess(['workspace.read'])
+                ? <Notifications />
+                : <Navigate to="/" replace />
+            }
           />
           <Route
             path="/backups"
-            element={<Backups />}
+            element={
+              canAccess(['workspace.read'])
+                ? <Backups />
+                : <Navigate to="/" replace />
+            }
           />
           <Route
             path="/audit"
-            element={<Audit />}
+            element={
+              canAccess(['audit.read'])
+                ? <Audit />
+                : <Navigate to="/" replace />
+            }
           />
           <Route
             path="*"
