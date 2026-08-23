@@ -6,6 +6,7 @@ import {
   Boxes,
   BrainCircuit,
   ClipboardList,
+  ExternalLink,
   LayoutDashboard,
   LogOut,
   ShieldCheck,
@@ -188,6 +189,16 @@ function ProtectedShell() {
                 ?? auth.user?.email}
             </span>
           </div>
+
+          <a
+            className="sidebar-action"
+            href="https://ai-project-srv-control.kirik20406.chatgpt.site"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <ExternalLink size={15} />
+            Public site
+          </a>
 
           <button
             type="button"
