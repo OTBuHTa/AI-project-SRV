@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.3.17-alpha` — Manual Action Plan Control.
+`v0.3.18-alpha` — Permission-aware Control Center.
 
 ## Architecture principles
 - AI Core runs on the workstation.
