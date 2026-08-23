@@ -53,6 +53,8 @@ docker compose --env-file .env.production -f docker-compose.yml -f docker-compos
 
 The TLS override replaces the development Web publication on TCP 8080 with TCP 80 and TCP 443.
 
+The TLS profile also restricts host-side API TCP 8000 to `127.0.0.1`. Nginx reaches the API through the internal Docker proxy network.
+
 ## Transport behavior
 
 - TCP 80 redirects to HTTPS.

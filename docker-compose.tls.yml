@@ -1,4 +1,8 @@
 services:
+  api:
+    ports: !override
+      - "127.0.0.1:8000:8000"
+
   web:
     environment:
       AI_SRV_SERVER_NAME: ${AI_SRV_SERVER_NAME:?set AI_SRV_SERVER_NAME}
