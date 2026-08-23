@@ -511,6 +511,8 @@ a {
   border: 0;
   color: #8491a5;
   background: transparent;
+  font: inherit;
+  text-decoration: none;
   cursor: pointer;
 }
 
