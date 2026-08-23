@@ -12,7 +12,9 @@ export type RealtimeStatus =
   | 'connected'
   | 'disconnected'
 
-export function useWorkspaceTelemetry() {
+export function useWorkspaceTelemetry(
+  enabled = true,
+) {
   const auth = useAuth()
   const queryClient = useQueryClient()
 
@@ -28,7 +30,11 @@ export function useWorkspaceTelemetry() {
     )
 
   useEffect(() => {
-    if (!accessToken || !workspaceId) {
+    if (
+      !enabled
+      || !accessToken
+      || !workspaceId
+    ) {
       return
     }
 
@@ -130,9 +136,14 @@ export function useWorkspaceTelemetry() {
     accessToken,
     workspaceId,
     queryClient,
+    enabled,
   ])
 
-  if (!accessToken || !workspaceId) {
+  if (
+    !enabled
+    || !accessToken
+    || !workspaceId
+  ) {
     return 'disabled'
   }
 

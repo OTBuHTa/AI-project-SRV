@@ -3,7 +3,7 @@
 Local-first AI infrastructure management platform.
 
 ## Current milestone
-`v0.3.19-alpha` — Permission-aware navigation and routing.
+`v0.3.20-alpha` — Permission-aware data surfaces and realtime gating.
 
 ## Architecture principles
 - AI Core runs on the workstation.

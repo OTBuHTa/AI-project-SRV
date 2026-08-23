@@ -44,7 +44,12 @@ const nav = [
     Activity,
     ['agent.read', 'network.read'],
   ],
-  ['/resources', 'Resources', Boxes, ['resource.read']],
+  [
+    '/resources',
+    'Resources',
+    Boxes,
+    ['resource.read', 'agent.read'],
+  ],
   ['/agents', 'Agents', Bot, ['agent.read']],
   ['/ai', 'AI Assistant', BrainCircuit, ['resource.read']],
   ['/actions', 'Actions', ShieldCheck, ['action.read']],
@@ -241,7 +246,10 @@ function ProtectedShell() {
           <Route
             path="/resources"
             element={
-              canAccess(['resource.read'])
+              canAccess([
+                'resource.read',
+                'agent.read',
+              ])
                 ? <Resources />
                 : <Navigate to="/" replace />
             }
