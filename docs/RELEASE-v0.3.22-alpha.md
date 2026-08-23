@@ -1,4 +1,4 @@
-# AI-project SRV v0.3.22-alpha
+# v0.3.22-alpha
 
 ## Summary
 
