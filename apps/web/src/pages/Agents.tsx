@@ -266,6 +266,12 @@ export function Agents() {
   const workspaceId =
     auth.workspace?.id
 
+  const canEvaluateAgent =
+    hasPermission(
+      auth.workspace?.role,
+      'agent.read',
+    )
+
   const canInstallAgent =
     hasPermission(
       auth.workspace?.role,
@@ -546,7 +552,8 @@ export function Agents() {
             type="button"
             className="primary-button"
             disabled={
-              !token
+              !canEvaluateAgent
+              || !token
               || !workspaceId
               || evaluateStatuses.isPending
             }

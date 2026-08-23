@@ -38,6 +38,7 @@ import {
   getHealth,
   getReady,
 } from '../api/system'
+import { hasPermission } from '../auth/permissions'
 import { useAuth } from '../auth/useAuth'
 import { useWorkspaceTelemetry } from '../realtime/useWorkspaceTelemetry'
 
@@ -136,6 +137,33 @@ export function Dashboard() {
   const workspaceId =
     auth.workspace?.id
 
+  const role =
+    auth.workspace?.role
+
+  const canReadWorkspace =
+    hasPermission(
+      role,
+      'workspace.read',
+    )
+
+  const canReadAgents =
+    hasPermission(
+      role,
+      'agent.read',
+    )
+
+  const canReadActions =
+    hasPermission(
+      role,
+      'action.read',
+    )
+
+  const canReadAudit =
+    hasPermission(
+      role,
+      'audit.read',
+    )
+
   const realtimeStatus =
     useWorkspaceTelemetry()
 
@@ -150,7 +178,9 @@ export function Dashboard() {
         workspaceId!,
       ),
     enabled: Boolean(
-      token && workspaceId,
+      token
+      && workspaceId
+      && canReadAgents,
     ),
     refetchInterval: 15_000,
   })
@@ -194,7 +224,9 @@ export function Dashboard() {
       }
     },
     enabled: Boolean(
-      token && workspaceId,
+      token
+      && workspaceId
+      && canReadWorkspace,
     ),
     refetchInterval: 15_000,
   })
@@ -210,7 +242,9 @@ export function Dashboard() {
         workspaceId!,
       ),
     enabled: Boolean(
-      token && workspaceId,
+      token
+      && workspaceId
+      && canReadWorkspace,
     ),
     refetchInterval: 10_000,
   })
@@ -228,7 +262,9 @@ export function Dashboard() {
         5,
       ),
     enabled: Boolean(
-      token && workspaceId,
+      token
+      && workspaceId
+      && canReadAudit,
     ),
     refetchInterval: 15_000,
   })
@@ -244,7 +280,9 @@ export function Dashboard() {
         workspaceId!,
       ),
     enabled: Boolean(
-      token && workspaceId,
+      token
+      && workspaceId
+      && canReadActions,
     ),
     refetchInterval: 10_000,
   })
