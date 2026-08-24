@@ -29,7 +29,7 @@ sys.path.insert(
 )
 
 from app.core.production_preflight import (  # noqa: E402
-    validate_production_env_file,
+    validate_production_deployment_profile,
 )
 
 
@@ -45,7 +45,7 @@ def main() -> int:
     env_path = Path(sys.argv[1])
 
     try:
-        validate_production_env_file(
+        validate_production_deployment_profile(
             env_path,
         )
     except Exception as exc:
@@ -56,7 +56,7 @@ def main() -> int:
         return 1
 
     print(
-        "OK: production security preflight "
+        "OK: production deployment preflight "
         f"passed for {env_path}"
     )
     return 0

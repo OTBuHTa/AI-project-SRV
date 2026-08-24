@@ -508,6 +508,13 @@ def command_production_gate(
     git = git_status()
     runtime = runtime_snapshot()
 
+    production_profile = run(
+        "python3",
+        "scripts/production-preflight.py",
+        ".env.production",
+        cwd=ROOT,
+    )
+
     alembic = run(
         "docker",
         "compose",
@@ -563,6 +570,9 @@ def command_production_gate(
         "production_environment":
             environment == "production",
 
+        "production_profile":
+            production_profile.returncode == 0,
+
         "alembic_head":
             (
                 alembic.returncode == 0
@@ -590,6 +600,10 @@ def command_production_gate(
             "environment": environment,
             "branch": git["branch"],
             "head": git["head"],
+            "production_profile":
+                compact_process(
+                    production_profile
+                ),
         },
         json_mode,
     )
