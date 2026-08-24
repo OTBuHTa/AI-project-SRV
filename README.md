@@ -38,6 +38,22 @@ Local-first AI infrastructure management platform.
 5. Call `POST /api/v1/auth/bootstrap` once to create the initial owner/workspace.
 6. Set `BOOTSTRAP_ENABLED=false` after initialization before external exposure.
 
+## Operational preflight
+
+Run the compatibility entrypoint from the repository root:
+
+```bash
+bash scripts/preflight.sh
+```
+
+Direct machine-readable invocation:
+
+```bash
+python3 tools/srvctl --json autopilot
+```
+
+The CLI also accepts `python3 tools/srvctl autopilot --json`.
+
 ## Current vertical slice
 User -> authentication -> workspace membership -> permission -> policy/audit -> agent/tool execution -> result -> audit.
 
@@ -107,3 +123,4 @@ POST /api/v1/ai/action-proposals
 ```
 
 Verification is independent from command exit status. A successful restart is accepted only after fresh Docker inventory observes the target container in `running` state.
+

@@ -71,6 +71,11 @@ jobs:
         run: |
           pytest -q
 
+      - name: Run operational CLI tests
+        working-directory: .
+        run: |
+          python -m unittest discover -s tests -p "test_srvctl.py"
+
       - name: Check whitespace errors
         working-directory: .
         run: |
@@ -145,3 +150,4 @@ jobs:
           AI_SRV_ENV_FILE=/dev/null \
           docker compose config --format json \
             | python apps/api/scripts/verify_compose_runtime_lifecycle.py
+
