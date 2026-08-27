@@ -5,6 +5,12 @@ Local-first AI infrastructure management platform.
 ## Current milestone
 `v0.3.22-alpha` — Operational automation layer with srvctl safe autopilot, guarded deploy and rollback lifecycle.
 
+## Public Control Center
+
+- Public interface: https://ai-project-srv-control.kirik20406.chatgpt.site
+- Integration contract: [docs/public-control-center.md](docs/public-control-center.md)
+- The public site is a presentation shell; authenticated operations remain in `apps/web` and the API.
+
 ## Architecture principles
 - AI Core runs on the workstation.
 - NAS is storage/backup only.
