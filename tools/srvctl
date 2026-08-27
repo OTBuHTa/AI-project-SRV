@@ -33,14 +33,48 @@ def run(
     if env:
         process_env.update(env)
 
-    return subprocess.run(
-        cmd,
-        cwd=cwd or ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=check,
-        env=process_env,
+    try:
+        return subprocess.run(
+            cmd,
+            cwd=cwd or ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=check,
+            env=process_env,
+        )
+    except OSError as exc:
+        if check:
+            raise
+
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=127,
+            stdout="",
+            stderr=(
+                f"{type(exc).__name__}: {exc}"
+            ),
+        )
+
+
+def api_pytest_command() -> tuple[str, ...]:
+    candidates = (
+        ROOT / "apps/api/.venv/bin/python",
+        ROOT / ".venv/bin/python",
+    )
+
+    for python in candidates:
+        if python.is_file():
+            return (
+                str(python),
+                "-m",
+                "pytest",
+            )
+
+    return (
+        "python3",
+        "-m",
+        "pytest",
     )
 
 
@@ -152,45 +186,20 @@ def command_status(json_mode: bool) -> int:
 
 
 def command_doctor(json_mode: bool) -> int:
-    checks = {}
+    snapshot = doctor_snapshot()
 
-    for binary in (
-        "git",
-        "docker",
-        "curl",
-        "python3",
-    ):
-        result = run(
-            "bash",
-            "-lc",
-            f"command -v {binary}",
-        )
-
-        checks[binary] = result.returncode == 0
-
-    compose = run(
-        "docker",
-        "compose",
-        "version",
+    return emit(
+        snapshot,
+        json_mode,
     )
-
-    checks["docker_compose"] = compose.returncode == 0
-    checks["env_exists"] = (ROOT / ".env").exists()
-
-    payload = {
-        "ok": all(checks.values()),
-        "checks": checks,
-    }
-
-    return emit(payload, json_mode)
 
 
 def command_test(json_mode: bool) -> int:
     api_root = ROOT / "apps/api"
-    pytest = ROOT / ".venv/bin/pytest"
+    pytest_command = api_pytest_command()
 
     targeted = run(
-        str(pytest),
+        *pytest_command,
         "-q",
         "tests/test_monitoring_websocket_auth.py",
         cwd=api_root,
@@ -200,7 +209,7 @@ def command_test(json_mode: bool) -> int:
 
     if targeted.returncode == 0:
         full = run(
-            str(pytest),
+            *pytest_command,
             "-q",
             cwd=api_root,
         )
@@ -279,13 +288,13 @@ def compact_process(
 def ci_snapshot() -> dict:
     api_root = ROOT / "apps/api"
     web_root = ROOT / "apps/web"
-    pytest = ROOT / ".venv/bin/pytest"
+    pytest_command = api_pytest_command()
 
     jobs = [
         (
             "api_targeted",
             (
-                str(pytest),
+                *pytest_command,
                 "-q",
                 "tests/test_monitoring_websocket_auth.py",
             ),
@@ -294,7 +303,7 @@ def ci_snapshot() -> dict:
         (
             "api_full",
             (
-                str(pytest),
+                *pytest_command,
                 "-q",
             ),
             api_root,
@@ -316,6 +325,20 @@ def ci_snapshot() -> dict:
                 "build",
             ),
             web_root,
+        ),
+        (
+            "srvctl_tests",
+            (
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "tests",
+                "-p",
+                "test_srvctl.py",
+            ),
+            ROOT,
         ),
         (
             "compose_config",
@@ -425,6 +448,15 @@ def doctor_snapshot() -> dict:
         compose.returncode == 0
     )
 
+    pytest_probe = run(
+        *api_pytest_command(),
+        "--version",
+    )
+
+    checks["api_pytest"] = (
+        pytest_probe.returncode == 0
+    )
+
     checks["env_exists"] = (
         ROOT / ".env"
     ).exists()
@@ -461,6 +493,7 @@ def command_autopilot(json_mode: bool) -> int:
 
     checks = {
         "doctor": doctor["ok"],
+        "repository_clean": not git["dirty"],
         "ci": ci["ok"],
         "runtime": runtime["ok"],
     }
@@ -1457,19 +1490,32 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
 
-    sub.add_parser("doctor")
-    sub.add_parser("status")
-    sub.add_parser("test")
-    sub.add_parser("verify")
-    sub.add_parser("ci")
-    sub.add_parser("production-gate")
-    sub.add_parser("autopilot")
-    sub.add_parser("deploy-plan")
-    sub.add_parser("deploy")
-    sub.add_parser("deploy-state")
-    sub.add_parser("rollback-plan")
-    sub.add_parser("rollback")
-    sub.add_parser("release-gate")
+    commands = (
+        "doctor",
+        "status",
+        "test",
+        "verify",
+        "ci",
+        "production-gate",
+        "autopilot",
+        "deploy-plan",
+        "deploy",
+        "deploy-state",
+        "rollback-plan",
+        "rollback",
+        "release-gate",
+    )
+
+    for command in commands:
+        command_parser = sub.add_parser(
+            command
+        )
+        command_parser.add_argument(
+            "--json",
+            action="store_true",
+            default=argparse.SUPPRESS,
+            help=argparse.SUPPRESS,
+        )
 
     return parser
 
@@ -1499,3 +1545,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
