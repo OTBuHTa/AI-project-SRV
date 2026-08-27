@@ -1,0 +1,6 @@
+services:
+  api:
+    environment:
+      MIKROTIK_CA_FILE: /run/ai-project-srv/mikrotik/ca.crt
+    volumes:
+      - ${MIKROTIK_CA_HOST_PATH:-/usr/local/share/ca-certificates/ai-srv-ca.crt}:/run/ai-project-srv/mikrotik/ca.crt:ro

@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     mikrotik_username: str = ""
     mikrotik_password: str = ""
     mikrotik_verify_tls: bool = True
+    mikrotik_ca_file: str = ""
     mikrotik_timeout_seconds: float = 5.0
     mikrotik_allow_write: bool = False
     mikrotik_wan_interface: str = "ether1"
